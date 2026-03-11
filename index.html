@@ -44,12 +44,32 @@
     transform: translateY(-100%);
     transition: transform .4s cubic-bezier(.2,0,.2,1);
     box-shadow: 0 4px 40px rgba(255,61,61,.5);
+    display: flex; align-items: center; justify-content: center; gap: 12px;
   }
   #alertBanner.show { transform: translateY(0); }
   #alertBanner .eta-pill {
     display: inline-block; background: rgba(255,255,255,.2);
     border-radius: 20px; padding: 2px 12px; margin-left: 10px; font-size: .85rem;
   }
+  #alertDismissBtn {
+    position: absolute; right: 16px; top: 50%; transform: translateY(-50%);
+    background: rgba(255,255,255,.2); border: 1.5px solid rgba(255,255,255,.5);
+    color: #fff; font-family: var(--font-h); font-size: .7rem; font-weight: 700;
+    letter-spacing: 1.5px; padding: 5px 14px; border-radius: 20px;
+    cursor: pointer; transition: background .2s; white-space: nowrap;
+  }
+  #alertDismissBtn:hover { background: rgba(255,255,255,.35); }
+
+  /* MANUAL DISMISS inside status card */
+  #manualDismissBtn {
+    display: none; margin-top: 14px; width: 100%; padding: 10px;
+    background: transparent; border: 1.5px solid rgba(255,61,61,.5);
+    color: var(--red); font-family: var(--font-h); font-size: .78rem;
+    font-weight: 700; letter-spacing: 2px; border-radius: 8px;
+    cursor: pointer; transition: background .2s;
+  }
+  #manualDismissBtn:hover { background: rgba(255,61,61,.12); }
+  #manualDismissBtn.show { display: block; }
 
   /* HEADER */
   header { padding: 28px 0 0; border-bottom: 1px solid var(--border); margin-bottom: 28px; }
@@ -321,8 +341,9 @@
 
 <!-- ALERT BANNER -->
 <div id="alertBanner">
-  ⚠ ZILZILA OGOHLANTIRISHI — XAVFSIZ JOYGA O'TING!
+  <span>⚠ ZILZILA OGOHLANTIRISHI — XAVFSIZ JOYGA O'TING!</span>
   <span class="eta-pill" id="bannerEta"></span>
+  <button id="alertDismissBtn" onclick="clearAlert()">✕ O'CHIRISH</button>
 </div>
 
 <div class="wrap">
@@ -396,6 +417,7 @@
         <div class="mag-display" id="magDisplay"><sub>M</sub> —</div>
         <div class="countdown" id="countdownEl"></div>
         <div class="epicenter-info" id="epicenterInfo"></div>
+        <button id="manualDismissBtn" onclick="clearAlert()">✕ OGOHLANTIRISHNI O'CHIRISH</button>
 
         <div class="ratio-row">
           <span style="font-size:.65rem;color:var(--muted)">STA/LTA</span>
@@ -404,7 +426,7 @@
           </div>
           <span class="ratio-val" id="ratioVal">0.0</span>
         </div>
-        <div class="threshold-label">Chegara: 3.5</div>
+        <div class="threshold-label">Chegara: 5.0</div>
       </div>
 
       <!-- SENSOR PERM -->
@@ -422,8 +444,8 @@
       <!-- DEMO HAVOLA -->
       <div class="card">
         <div class="card-label">TEST REJIMI</div>
-        <a href="demo.html?demo=true" target="_blank" style="text-decoration:none;">
-          <button class="demo-btn" style="border-color:var(--purple);color:var(--purple);">
+        <a href="demo.html?demo=true" target="_blank" style="text-decoration:none;" id="demoBtnWrap">
+          <button class="demo-btn" id="demoBtn" style="border-color:var(--purple);color:var(--purple);">
             ⚗ DEMO PANELINI OCHISH ↗
           </button>
         </a>
@@ -855,7 +877,8 @@ function handleServerMsg(msg) {
 const SAMPLE_RATE = 50;
 const STA_WIN     = 50;
 const LTA_WIN     = 500;
-const THRESHOLD   = 3.5;
+const THRESHOLD   = 5.0;   // 3.5 → 5.0: fon shovqini false trigger bermaydi
+const TRIGGER_COOLDOWN = 45000; // 18s → 45s: qayta trigger uchun kutish vaqti
 
 const staBuf = [], ltaBuf = [];
 let triggered     = false;
@@ -868,23 +891,29 @@ function feedSample(ax, ay, az) {
   const amp = Math.sqrt(ax*ax + ay*ay + az*az);
   staBuf.push(amp); if (staBuf.length > STA_WIN) staBuf.shift();
   ltaBuf.push(amp); if (ltaBuf.length > LTA_WIN) ltaBuf.shift();
+  // LTA to'liq to'lmagunicha ishonchli signal bo'lmaydi
   if (ltaBuf.length < LTA_WIN) return { triggered: false, ratio: 0 };
 
   const sta = staBuf.reduce((a,b)=>a+b,0) / staBuf.length;
   const lta = ltaBuf.reduce((a,b)=>a+b,0) / ltaBuf.length;
-  const ratio = lta > 1e-9 ? sta / lta : 0;
+  const ratio = lta > 1e-6 ? sta / lta : 0;
   currentRatio = ratio;
   histRatioBuffer.push(ratio);
   if (histRatioBuffer.length > 600) histRatioBuffer.shift();
 
+  const now = Date.now();
   if (!triggered && ratio >= THRESHOLD) {
+    // Cooldown tekshiruvi — so'nggi triggerdan yetarli vaqt o'tdimi?
+    if (triggerTime && (now - triggerTime) < TRIGGER_COOLDOWN) {
+      return { triggered: false, ratio };
+    }
     triggered   = true;
-    triggerTime = Date.now();
+    triggerTime = now;
     const mag   = estimateMag(amp);
     return { triggered: true, ratio, magnitude: mag, amplitude: amp };
   }
-  if (triggered && (Date.now() - triggerTime) > 18000) {
-    triggered = false; triggerTime = null;
+  if (triggered && (now - triggerTime) > TRIGGER_COOLDOWN) {
+    triggered = false;
   }
   return { triggered, ratio, magnitude: null };
 }
@@ -1042,7 +1071,7 @@ function drawHistory() {
   c.height=c.offsetHeight*devicePixelRatio;
   const ctx=c.getContext('2d'),W=c.width,H=c.height;
   ctx.clearRect(0,0,W,H);
-  ctx.fillStyle='#090d14'; ctx.fillRect(0,0,W,H);
+  ctx.fillStyle='#07090f'; ctx.fillRect(0,0,W,H);
   if (histRatioBuffer.length < 2) return;
 
   const thY=H-(THRESHOLD/8)*H;
@@ -1144,9 +1173,9 @@ function handleAlert(magnitude, etaSeconds=15, epicenter='', distanceKm=0) {
   clearInterval(countdownTimer);
   countdownTimer=setInterval(()=>{
     alertCountdown--;
-    document.getElementById('bannerEta').textContent=`${alertCountdown}s`;
-    document.getElementById('countdownEl').textContent=`⏱ ${alertCountdown} soniya`;
-    if (alertCountdown<=0) { clearInterval(countdownTimer); clearAlert(); }
+    document.getElementById('bannerEta').textContent=`${Math.max(0,alertCountdown)}s`;
+    document.getElementById('countdownEl').textContent=`⏱ ${Math.max(0,alertCountdown)} soniya`;
+    if (alertCountdown<=0) { clearInterval(countdownTimer); countdownTimer=null; clearAlert(); }
   }, 1000);
 
   ['step1','step2','step3','step4'].forEach((id,i)=>{
@@ -1164,6 +1193,7 @@ function showAlertUI(magnitude, epicenter, distanceKm) {
   document.getElementById('magDisplay').innerHTML=`<sub>M</sub> ${magnitude}`;
   document.getElementById('countdownEl').className='countdown show';
   document.getElementById('demoBtn').disabled=true;
+  document.getElementById('manualDismissBtn').className='show';
 
   if (epicenter) {
     const info=document.getElementById('epicenterInfo');
@@ -1179,20 +1209,20 @@ function showAlertUI(magnitude, epicenter, distanceKm) {
   });
 }
 
-// FIX #2 — detektor holatini to'g'ri reset qilish funksiyasi
 function resetDetector() {
   triggered   = false;
-  triggerTime = null;
+  triggerTime = null;  // qo'lda o'chirilganda cooldown ham reset qilinadi
   staBuf.length = 0;
   ltaBuf.length = 0;
 }
 
 function clearAlert() {
   alertActive = false;
+  clearInterval(countdownTimer);
   resetDetector();
   stopAlertSiren();
   playNotification('allclear');
-  addLog('✓ Zilzila to\'lqini o\'tdi. Barcha xavfsiz.','ok');
+  addLog('✓ Ogohlantirish o\'chirildi. Monitoring davom etmoqda.','ok');
   document.getElementById('alertBanner').classList.remove('show');
   document.getElementById('statusCard').classList.remove('alert-active');
   document.getElementById('statusLabel').className='status-label';
@@ -1202,6 +1232,7 @@ function clearAlert() {
   document.getElementById('countdownEl').classList.remove('show');
   document.getElementById('epicenterInfo').classList.remove('show');
   document.getElementById('demoBtn').disabled=false;
+  document.getElementById('manualDismissBtn').className='';
   DISTRICTS.forEach(d=>{
     const chip=document.getElementById('dc_'+d.name);
     if (chip) chip.classList.remove('triggered');
@@ -1234,16 +1265,16 @@ function updateRatioUI(ratio) {
   document.getElementById('ratioBar').style.width=pct+'%';
   document.getElementById('ratioBar').style.background=
     ratio>=THRESHOLD?'linear-gradient(90deg,#ff3d3d,#ff6060)':
-    ratio>=2?'linear-gradient(90deg,var(--yellow),#ffa726)':
+    ratio>=(THRESHOLD*0.6)?'linear-gradient(90deg,var(--yellow),#ffa726)':
     'linear-gradient(90deg,var(--green),#69f0ae)';
   document.getElementById('ratioVal').textContent=ratio.toFixed(1);
   const sv=document.getElementById('statRatio');
   sv.textContent=ratio.toFixed(1);
-  sv.style.color=ratio>=THRESHOLD?'var(--red)':ratio>=2?'var(--yellow)':'var(--green)';
+  sv.style.color=ratio>=THRESHOLD?'var(--red)':ratio>=(THRESHOLD*0.6)?'var(--yellow)':'var(--green)';
   const fill=Math.min(ratio/THRESHOLD,1);
   const circ=document.getElementById('ringCircle');
   circ.style.strokeDashoffset=345-345*fill;
-  circ.style.stroke=ratio>=THRESHOLD?'var(--red)':ratio>=2?'var(--yellow)':'var(--green)';
+  circ.style.stroke=ratio>=THRESHOLD?'var(--red)':ratio>=(THRESHOLD*0.6)?'var(--yellow)':'var(--green)';
 }
 
 const logMessages=[];
@@ -1335,9 +1366,11 @@ function initApp(initLat, initLng) {
 
 // Demo paneldan qaytganda (#app hash) overlay ni o'tkazib yuborish
 if (location.hash === '#app') {
-  window.addEventListener('DOMContentLoaded', () => {
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', () => initApp(null, null));
+  } else {
     initApp(null, null);
-  });
+  }
 }
 </script>
 </body>
