@@ -1,0 +1,1335 @@
+<!DOCTYPE html>
+<html lang="uz">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>SeismoNet UZ — Zilzila Monitoring</title>
+<link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;700;800&family=IBM+Plex+Mono:wght@300;400;600&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg:       #07090f;
+    --surface:  #0d1117;
+    --border:   #1a2030;
+    --green:    #00e676;
+    --green-d:  #00c853;
+    --yellow:   #ffd740;
+    --red:      #ff3d3d;
+    --blue:     #40c4ff;
+    --text:     #e8eaf0;
+    --muted:    #5a6278;
+    --font-h:   'Syne', sans-serif;
+    --font-m:   'IBM Plex Mono', monospace;
+  }
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    background: var(--bg); color: var(--text);
+    font-family: var(--font-m); min-height: 100vh; overflow-x: hidden;
+  }
+  body::before {
+    content: ''; position: fixed; inset: 0; z-index: 0; pointer-events: none;
+    background-image:
+      linear-gradient(rgba(0,230,118,.03) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(0,230,118,.03) 1px, transparent 1px);
+    background-size: 40px 40px;
+  }
+  .wrap { position: relative; z-index: 1; max-width: 1200px; margin: 0 auto; padding: 0 20px; }
+
+  /* ALERT BANNER */
+  #alertBanner {
+    position: fixed; top: 0; left: 0; right: 0; z-index: 999;
+    background: var(--red); color: #fff; text-align: center;
+    padding: 14px 20px; font-family: var(--font-h);
+    font-size: 1.1rem; font-weight: 800; letter-spacing: 2px;
+    transform: translateY(-100%);
+    transition: transform .4s cubic-bezier(.2,0,.2,1);
+    box-shadow: 0 4px 40px rgba(255,61,61,.5);
+  }
+  #alertBanner.show { transform: translateY(0); }
+  #alertBanner .eta-pill {
+    display: inline-block; background: rgba(255,255,255,.2);
+    border-radius: 20px; padding: 2px 12px; margin-left: 10px; font-size: .85rem;
+  }
+
+  /* HEADER */
+  header { padding: 28px 0 0; border-bottom: 1px solid var(--border); margin-bottom: 28px; }
+  .header-inner {
+    display: flex; align-items: flex-end; justify-content: space-between;
+    padding-bottom: 16px; flex-wrap: wrap; gap: 12px;
+  }
+  .logo { font-family: var(--font-h); font-size: 1.6rem; font-weight: 800; letter-spacing: 3px; color: var(--green); }
+  .logo span { color: var(--text); opacity: .5; }
+  .tagline { font-size: .7rem; color: var(--muted); letter-spacing: 2px; margin-top: 2px; }
+  .header-meta { display: flex; gap: 20px; align-items: center; flex-wrap: wrap; }
+  .live-dot { display: flex; align-items: center; gap: 6px; font-size: .75rem; color: var(--green); letter-spacing: 1px; }
+  .live-dot::before {
+    content: ''; width: 8px; height: 8px; border-radius: 50%;
+    background: var(--green); box-shadow: 0 0 0 0 rgba(0,230,118,.5);
+    animation: livePulse 2s infinite;
+  }
+  @keyframes livePulse {
+    0%   { box-shadow: 0 0 0 0 rgba(0,230,118,.5); }
+    70%  { box-shadow: 0 0 0 8px rgba(0,230,118,0); }
+    100% { box-shadow: 0 0 0 0 rgba(0,230,118,0); }
+  }
+  .clock { font-size: .8rem; color: var(--muted); }
+
+  /* WS STATUS */
+  .ws-status {
+    display: flex; align-items: center; gap: 6px;
+    font-size: .72rem; letter-spacing: 1px; padding: 4px 10px;
+    border-radius: 20px; border: 1px solid var(--border);
+    transition: all .3s;
+  }
+  .ws-status.connected    { color: var(--green); border-color: rgba(0,230,118,.3); }
+  .ws-status.disconnected { color: var(--muted); border-color: var(--border); }
+  .ws-status.connecting   { color: var(--yellow); border-color: rgba(255,215,64,.3); }
+  .ws-dot { width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
+  .ws-status.connected .ws-dot { animation: livePulse 2s infinite; }
+
+  /* MAIN GRID */
+  .main-grid { display: grid; grid-template-columns: 320px 1fr; gap: 16px; align-items: start; }
+  @media (max-width: 780px) { .main-grid { grid-template-columns: 1fr; } }
+
+  /* CARD */
+  .card {
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: 12px; padding: 18px; position: relative; overflow: hidden;
+  }
+  .card::before {
+    content: ''; position: absolute; top: 0; left: 0; right: 0; height: 2px;
+    background: linear-gradient(90deg, transparent, var(--green), transparent); opacity: .3;
+  }
+  .card.alert-active { border-color: var(--red); animation: cardShake .5s ease; }
+  .card.alert-active::before { background: linear-gradient(90deg, transparent, var(--red), transparent); opacity: 1; }
+  @keyframes cardShake {
+    0%,100% { transform: translateX(0); }
+    20%     { transform: translateX(-3px); }
+    40%     { transform: translateX(3px); }
+    60%     { transform: translateX(-2px); }
+    80%     { transform: translateX(2px); }
+  }
+  .card-label { font-size: .65rem; color: var(--muted); letter-spacing: 2px; text-transform: uppercase; margin-bottom: 14px; }
+
+  /* STATUS CARD */
+  .status-main { text-align: center; padding: 24px 18px; }
+  .status-ring {
+    width: 120px; height: 120px; border-radius: 50%;
+    margin: 0 auto 16px; position: relative;
+    display: flex; align-items: center; justify-content: center;
+  }
+  .status-ring svg { position: absolute; inset: 0; width: 100%; height: 100%; transform: rotate(-90deg); }
+  .status-ring circle { fill: none; stroke-width: 3; stroke-linecap: round; transition: stroke-dashoffset 1s ease, stroke .5s; }
+  .ring-bg  { stroke: var(--border); }
+  .ring-val { stroke: var(--green); stroke-dasharray: 345; stroke-dashoffset: 345; }
+  .status-icon { font-size: 2.4rem; line-height: 1; }
+  .status-label {
+    font-family: var(--font-h); font-size: 1.1rem; font-weight: 800;
+    letter-spacing: 2px; color: var(--green); transition: color .4s;
+  }
+  .status-label.warn   { color: var(--yellow); }
+  .status-label.danger { color: var(--red); animation: blink .6s infinite; }
+  @keyframes blink { 50% { opacity: .4; } }
+  .mag-display {
+    margin: 12px 0; font-family: var(--font-h);
+    font-size: 3rem; font-weight: 800;
+    color: var(--red); opacity: 0; transition: opacity .3s; line-height: 1;
+  }
+  .mag-display.show { opacity: 1; }
+  .mag-display sub { font-size: 1rem; color: var(--muted); }
+  .countdown { font-size: 1.4rem; color: var(--yellow); font-family: var(--font-h); font-weight: 700; opacity: 0; transition: opacity .3s; }
+  .countdown.show { opacity: 1; }
+
+  /* EPICENTER INFO */
+  .epicenter-info {
+    margin-top: 8px; padding: 8px 12px;
+    background: rgba(255,61,61,.08); border: 1px solid rgba(255,61,61,.2);
+    border-radius: 8px; font-size: .72rem; color: var(--text);
+    opacity: 0; transition: opacity .3s; display: none;
+  }
+  .epicenter-info.show { opacity: 1; display: block; }
+
+  /* STA/LTA */
+  .ratio-row { display: flex; align-items: center; gap: 10px; margin: 14px 0 8px; }
+  .ratio-bar-wrap { flex: 1; height: 6px; background: var(--border); border-radius: 3px; overflow: hidden; }
+  .ratio-bar { height: 100%; width: 0%; background: linear-gradient(90deg, var(--green), var(--yellow)); border-radius: 3px; transition: width .2s ease, background .4s; }
+  .ratio-val { font-size: .8rem; color: var(--muted); min-width: 36px; text-align: right; }
+  .threshold-label { font-size: .65rem; color: var(--muted); text-align: right; }
+
+  /* SEISMOGRAPH */
+  #seismoCanvas { width: 100%; height: 100px; display: block; border-radius: 8px; background: #090d14; }
+
+  /* DISTRICTS */
+  .districts { display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px; margin-top: 4px; }
+  .district-chip {
+    background: #0a0f1a; border: 1px solid var(--border);
+    border-radius: 8px; padding: 10px 12px;
+    display: flex; align-items: center; gap: 8px;
+    transition: border-color .3s, background .3s;
+  }
+  .district-chip.triggered { border-color: var(--red); background: rgba(255,61,61,.07); }
+  .district-dot { width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0; background: var(--green); box-shadow: 0 0 5px var(--green); transition: background .3s, box-shadow .3s; }
+  .district-chip.triggered .district-dot { background: var(--red); box-shadow: 0 0 8px var(--red); animation: dotPulse .4s infinite; }
+  @keyframes dotPulse { 50% { opacity: .3; } }
+  .district-name { font-size: .72rem; color: var(--text); }
+  .district-mini-wave { flex: 1; height: 22px; }
+
+  /* LOG */
+  .log-list { max-height: 160px; overflow-y: auto; display: flex; flex-direction: column; gap: 4px; }
+  .log-list::-webkit-scrollbar { width: 3px; }
+  .log-list::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
+  .log-entry { display: flex; gap: 8px; font-size: .7rem; animation: logIn .25s ease; }
+  @keyframes logIn { from { opacity: 0; transform: translateY(-4px); } }
+  .log-time { color: var(--muted); flex-shrink: 0; }
+  .log-msg  { color: var(--text); }
+  .log-msg.warn   { color: var(--red); }
+  .log-msg.detect { color: var(--yellow); }
+  .log-msg.ok     { color: var(--green); }
+  .log-msg.server { color: var(--blue); }
+
+  /* STATS ROW */
+  .stats-row { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; margin-bottom: 16px; }
+  @media (max-width: 600px) { .stats-row { grid-template-columns: repeat(2,1fr); } }
+  .stat-box { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 12px 14px; text-align: center; }
+  .stat-val { font-family: var(--font-h); font-size: 1.4rem; font-weight: 800; color: var(--green); line-height: 1; margin-bottom: 4px; transition: color .4s; }
+  .stat-lbl { font-size: .6rem; color: var(--muted); letter-spacing: 1.5px; }
+
+  /* DEMO BTN */
+  .demo-btn {
+    width: 100%; padding: 13px; background: transparent;
+    border: 1.5px solid var(--red); color: var(--red);
+    border-radius: 8px; font-family: var(--font-h);
+    font-size: .85rem; font-weight: 700; letter-spacing: 2px;
+    cursor: pointer; transition: background .2s, color .2s, transform .1s; margin-top: 4px;
+  }
+  .demo-btn:hover { background: rgba(255,61,61,.1); }
+  .demo-btn:active { transform: scale(.97); }
+  .demo-btn:disabled { border-color: var(--border); color: var(--muted); cursor: not-allowed; }
+
+  /* PERM BOX */
+  #permBox {
+    background: rgba(64,196,255,.06); border: 1px solid rgba(64,196,255,.2);
+    border-radius: 10px; padding: 14px; margin-bottom: 16px;
+    font-size: .75rem; color: var(--blue); display: none;
+  }
+  #permBox button {
+    margin-top: 8px; padding: 6px 14px; background: var(--blue); color: #000;
+    border: none; border-radius: 6px; font-family: var(--font-m);
+    font-size: .75rem; cursor: pointer; font-weight: 600;
+  }
+
+  /* GPS BOX */
+  #gpsBox {
+    background: rgba(0,230,118,.04); border: 1px solid rgba(0,230,118,.15);
+    border-radius: 10px; padding: 10px 14px; margin-bottom: 12px;
+    font-size: .7rem; color: var(--muted);
+  }
+  #gpsBox .gps-val { color: var(--green); }
+
+  /* SERVER INFO */
+  #serverBox {
+    background: rgba(64,196,255,.04); border: 1px solid rgba(64,196,255,.15);
+    border-radius: 10px; padding: 10px 14px; margin-bottom: 12px;
+    font-size: .7rem; color: var(--muted);
+  }
+  .server-url-row {
+    display: flex; gap: 6px; margin-top: 8px; align-items: center;
+  }
+  .server-url-row input {
+    flex: 1; background: var(--bg); border: 1px solid var(--border);
+    color: var(--text); border-radius: 6px; padding: 5px 8px;
+    font-family: var(--font-m); font-size: .7rem;
+  }
+  .server-url-row button {
+    padding: 5px 10px; background: var(--blue); color: #000;
+    border: none; border-radius: 6px; font-size: .7rem;
+    cursor: pointer; font-weight: 700; white-space: nowrap;
+  }
+
+  .right-col { display: flex; flex-direction: column; gap: 16px; }
+  #histCanvas { width: 100%; height: 70px; display: block; }
+
+  footer {
+    border-top: 1px solid var(--border); margin-top: 32px; padding: 16px 0 24px;
+    display: flex; justify-content: space-between; align-items: center;
+    flex-wrap: wrap; gap: 8px; font-size: .65rem; color: var(--muted); letter-spacing: 1px;
+  }
+
+  /* SOUND UNLOCK */
+  #soundUnlock {
+    position: fixed; inset: 0; z-index: 9999;
+    background: rgba(7,9,15,.95); display: flex; flex-direction: column;
+    align-items: center; justify-content: center; gap: 20px; backdrop-filter: blur(8px);
+  }
+  #soundUnlock h2 { font-family: var(--font-h); font-size: 1.5rem; color: var(--green); letter-spacing: 3px; }
+  #soundUnlock p { color: var(--muted); font-size: .8rem; text-align: center; max-width: 300px; line-height: 1.6; }
+  #soundUnlock button {
+    padding: 14px 40px; background: var(--green); color: #000;
+    border: none; border-radius: 8px; font-family: var(--font-h);
+    font-size: 1rem; font-weight: 800; cursor: pointer; letter-spacing: 2px; transition: transform .1s;
+  }
+  #soundUnlock button:active { transform: scale(.96); }
+  .mode-pills { display: flex; gap: 8px; }
+  .mode-pill {
+    padding: 8px 18px; border-radius: 20px; border: 1px solid var(--border);
+    background: transparent; color: var(--muted); font-family: var(--font-m);
+    font-size: .75rem; cursor: pointer; transition: all .2s;
+  }
+  .mode-pill.active { background: var(--green); color: #000; border-color: var(--green); font-weight: 700; }
+</style>
+</head>
+<body>
+
+<!-- REJIM TANLASH -->
+<div id="soundUnlock">
+  <div style="font-size:3rem">🌍</div>
+  <h2>SEISMONET UZ</h2>
+  <p>Rejimni tanlang — tizim avtomatik ishga tushadi</p>
+
+  <div class="mode-pills">
+    <button class="mode-pill active" id="modeLocal"  onclick="selectMode('local')">📱 Lokal</button>
+    <button class="mode-pill" id="modeServer" onclick="selectMode('server')">🌐 Server</button>
+  </div>
+
+  <div id="serverInputWrap" style="display:none; text-align:center;">
+    <p style="font-size:.72rem; margin-bottom:6px; color:var(--muted);">Server manzili (ws://...)</p>
+    <input id="wsUrlInput" type="text" value="" placeholder="wss://domen.railway.app/ws"
+      style="background:#0d1117; border:1px solid #1a2030; color:#e8eaf0;
+             border-radius:8px; padding:8px 14px; font-family:monospace;
+             font-size:.8rem; width:280px; text-align:center;">
+  </div>
+
+  <!-- GPS ruxsat so'rovi -->
+  <div id="gpsPermWrap" style="display:none; text-align:center; background:rgba(0,230,118,.06); border:1px solid rgba(0,230,118,.2); border-radius:12px; padding:16px 20px; max-width:300px;">
+    <div style="font-size:1.8rem;margin-bottom:8px">📍</div>
+    <div style="font-size:.8rem; color:var(--green); font-weight:700; margin-bottom:6px;">GPS RUXSATI</div>
+    <div style="font-size:.72rem; color:var(--muted); line-height:1.6; margin-bottom:12px;">
+      Aniq joylashuvingiz uchun GPS ga ruxsat bering. Bu ma'lumot faqat zilzila ogohlantirishlari uchun ishlatiladi.
+    </div>
+    <div style="display:flex; gap:8px; justify-content:center;">
+      <button onclick="gpsAllow()" style="padding:8px 20px; background:var(--green); color:#000; border:none; border-radius:8px; font-family:var(--font-h); font-size:.8rem; font-weight:800; cursor:pointer; letter-spacing:1px;">RUXSAT BERISH</button>
+      <button onclick="gpsDeny()" style="padding:8px 16px; background:transparent; color:var(--muted); border:1px solid var(--border); border-radius:8px; font-family:var(--font-m); font-size:.75rem; cursor:pointer;">O'TKAZIB YUBORISH</button>
+    </div>
+  </div>
+
+  <!-- GPS aniqlanmoqda -->
+  <div id="gpsLoadingWrap" style="display:none; text-align:center; color:var(--muted); font-size:.75rem;">
+    <div style="font-size:1.5rem; margin-bottom:6px;">📡</div>
+    GPS koordinata aniqlanmoqda...
+  </div>
+</div>
+
+<!-- ALERT BANNER -->
+<div id="alertBanner">
+  ⚠ ZILZILA OGOHLANTIRISHI — XAVFSIZ JOYGA O'TING!
+  <span class="eta-pill" id="bannerEta"></span>
+</div>
+
+<div class="wrap">
+  <header>
+    <div class="header-inner">
+      <div>
+        <div class="logo">SEISMO<span>NET</span> UZ</div>
+        <div class="tagline">REAL VAQTLI SEYSMIK MONITORING — GPS + SERVER</div>
+      </div>
+      <div class="header-meta">
+        <div class="live-dot">JONLI MONITORING</div>
+        <div class="ws-status disconnected" id="wsStatus">
+          <div class="ws-dot"></div>
+          <span id="wsStatusText">SERVERGA ULANILMAGAN</span>
+        </div>
+        <div class="clock" id="clockEl">--:--:--</div>
+      </div>
+    </div>
+  </header>
+
+  <!-- STATS -->
+  <div class="stats-row">
+    <div class="stat-box">
+      <div class="stat-val" id="statDevices">—</div>
+      <div class="stat-lbl">TARMOQDAGI QURILMALAR</div>
+    </div>
+    <div class="stat-box">
+      <div class="stat-val" id="statEvents">0</div>
+      <div class="stat-lbl">BUGUNGI HODISALAR</div>
+    </div>
+    <div class="stat-box">
+      <div class="stat-val" id="statRatio" style="color:var(--green)">0.0</div>
+      <div class="stat-lbl">STA/LTA NISBAT</div>
+    </div>
+    <div class="stat-box">
+      <div class="stat-val" id="statRegion" style="font-size:.9rem">—</div>
+      <div class="stat-lbl">SIZNING HUDUD</div>
+    </div>
+  </div>
+
+  <div class="main-grid">
+    <!-- LEFT -->
+    <div style="display:flex; flex-direction:column; gap:16px;">
+
+      <!-- GPS BOX -->
+      <div id="gpsBox">
+        📍 GPS: <span class="gps-val" id="gpsVal">aniqlanmoqda...</span>
+      </div>
+
+      <!-- SERVER BOX (server rejimida ko'rinadi) -->
+      <div id="serverBox" style="display:none;">
+        <span style="color:var(--blue);">🌐 Server:</span>
+        <span id="serverAddr" style="color:var(--muted);">—</span>
+        <div class="server-url-row">
+          <input id="wsUrlChange" type="text" placeholder="wss://domen.railway.app/ws">
+          <button onclick="reconnectWS()">ULASH</button>
+        </div>
+      </div>
+
+      <!-- STATUS CARD -->
+      <div class="card status-main" id="statusCard">
+        <div class="card-label">TIZIM HOLATI</div>
+        <div class="status-ring">
+          <svg viewBox="0 0 120 120">
+            <circle class="ring-bg"  cx="60" cy="60" r="55"/>
+            <circle class="ring-val" id="ringCircle" cx="60" cy="60" r="55"/>
+          </svg>
+          <div class="status-icon" id="statusIcon">🟢</div>
+        </div>
+        <div class="status-label" id="statusLabel">XAVFSIZ</div>
+        <div class="mag-display" id="magDisplay"><sub>M</sub> —</div>
+        <div class="countdown" id="countdownEl"></div>
+        <div class="epicenter-info" id="epicenterInfo"></div>
+
+        <div class="ratio-row">
+          <span style="font-size:.65rem;color:var(--muted)">STA/LTA</span>
+          <div class="ratio-bar-wrap">
+            <div class="ratio-bar" id="ratioBar"></div>
+          </div>
+          <span class="ratio-val" id="ratioVal">0.0</span>
+        </div>
+        <div class="threshold-label">Chegara: 3.5</div>
+      </div>
+
+      <!-- SENSOR PERM -->
+      <div id="permBox">
+        📱 Real akselerometr aniqlandi.
+        <br><button onclick="requestMotion()">SENSORI ULASH</button>
+      </div>
+
+      <!-- SEISMOGRAPH -->
+      <div class="card">
+        <div class="card-label">SEYSMOGRAF — REAL VAQT</div>
+        <canvas id="seismoCanvas"></canvas>
+      </div>
+
+      <!-- DEMO HAVOLA -->
+      <div class="card">
+        <div class="card-label">TEST REJIMI</div>
+        <a href="demo.html?demo=true" target="_blank" style="text-decoration:none;">
+          <button class="demo-btn" style="border-color:var(--purple);color:var(--purple);">
+            ⚗ DEMO PANELINI OCHISH ↗
+          </button>
+        </a>
+        <div style="font-size:.65rem;color:var(--muted);margin-top:8px;line-height:1.5;">
+          Demo panel alohida sahifada ochiladi. Haqiqiy monitoring tizimiga ta'sir qilmaydi.
+        </div>
+      </div>
+    </div>
+
+    <!-- RIGHT -->
+    <div class="right-col">
+      <div class="card">
+        <div class="card-label">VILOYATLAR SENSORI TARMOG'I</div>
+        <div class="districts" id="districtsGrid"></div>
+      </div>
+      <div class="card">
+        <div class="card-label">STA/LTA TARIXI (oxirgi 60 soniya)</div>
+        <canvas id="histCanvas"></canvas>
+      </div>
+      <div class="card">
+        <div class="card-label">JONLI JURNAL</div>
+        <div class="log-list" id="logList">
+          <div class="log-entry">
+            <span class="log-time">--:--:--</span>
+            <span class="log-msg">Tizim kutmoqda...</span>
+          </div>
+        </div>
+      </div>
+      <div class="card">
+        <div class="card-label">ISHLASH PRINSIPI</div>
+        <div style="display:grid; grid-template-columns:1fr 1fr; gap:10px; margin-top:4px;">
+          <div id="step1" style="opacity:.35; transition:opacity .5s;">
+            <div style="font-size:1.2rem;margin-bottom:4px">📍</div>
+            <div style="font-size:.72rem;color:var(--text);font-weight:600">GPS joylashuv</div>
+            <div style="font-size:.65rem;color:var(--muted)">Koordinata aniqlanadi</div>
+          </div>
+          <div id="step2" style="opacity:.35; transition:opacity .5s;">
+            <div style="font-size:1.2rem;margin-bottom:4px">📡</div>
+            <div style="font-size:.72rem;color:var(--text);font-weight:600">P-to'lqin</div>
+            <div style="font-size:.65rem;color:var(--muted)">STA/LTA ≥ 3.5</div>
+          </div>
+          <div id="step3" style="opacity:.35; transition:opacity .5s;">
+            <div style="font-size:1.2rem;margin-bottom:4px">🖥️</div>
+            <div style="font-size:.72rem;color:var(--text);font-weight:600">Server tasdiq</div>
+            <div style="font-size:.65rem;color:var(--muted)">3+ qurilma zarur</div>
+          </div>
+          <div id="step4" style="opacity:.35; transition:opacity .5s;">
+            <div style="font-size:1.2rem;margin-bottom:4px">🔔</div>
+            <div style="font-size:.72rem;color:var(--text);font-weight:600">Ogohlantirish</div>
+            <div style="font-size:.65rem;color:var(--muted)">S-to'lqindan oldin</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <footer>
+    <span>SeismoNet UZ © 2025 — O'zbekiston Favqulodda Vaziyatlar Vazirligi</span>
+    <span id="deviceIdEl" style="color:var(--muted);font-size:.6rem;"></span>
+    <span id="sensorMode">Sensor: Simulyatsiya</span>
+  </footer>
+</div>
+
+<script>
+// ============================================================
+//  KONFIGURATSIYA
+// ============================================================
+let APP_MODE    = 'local';   // 'local' | 'server'
+// Railway da wss://, lokalde ws:// avtomatik
+let WS_URL = (location.protocol === 'https:')
+  ? 'wss://' + location.host + '/ws'
+  : 'ws://' + location.host + '/ws';
+let DEVICE_ID   = 'dev_' + Math.random().toString(36).slice(2, 10);
+let userLat     = null;
+let userLng     = null;
+let userRegion  = '—';
+
+// ── Rejim tanlash — avtomatik ishga tushadi ─────────────────
+let wsUrlChanged = false;
+
+function selectMode(mode) {
+  APP_MODE = mode;
+  document.getElementById('modeLocal').classList.toggle('active',  mode === 'local');
+  document.getElementById('modeServer').classList.toggle('active', mode === 'server');
+  document.getElementById('serverInputWrap').style.display = mode === 'server' ? 'block' : 'none';
+
+  // Server URL kiritish uchun biroz vaqt beramiz, keyin GPS so'raymiz
+  clearTimeout(window._modeTimer);
+  window._modeTimer = setTimeout(() => {
+    // Agar hali overlay yopilmagan bo'lsa — GPS ruxsat so'raymiz
+    const overlay = document.getElementById('soundUnlock');
+    if (overlay.style.display !== 'none') {
+      showGpsPermission();
+    }
+  }, mode === 'server' ? 800 : 300);
+}
+
+function showGpsPermission() {
+  // Mode pills va server URL ni yashiramiz, GPS so'rovini ko'rsatamiz
+  document.querySelector('.mode-pills').style.display = 'none';
+  document.querySelector('#soundUnlock p').style.display = 'none';
+  document.getElementById('serverInputWrap').style.display = 'none';
+  document.getElementById('gpsPermWrap').style.display = 'block';
+}
+
+function gpsAllow() {
+  document.getElementById('gpsPermWrap').style.display = 'none';
+  document.getElementById('gpsLoadingWrap').style.display = 'block';
+
+  // GPS so'rovi yuboramiz
+  if (!navigator.geolocation) {
+    gpsDeny();
+    return;
+  }
+  navigator.geolocation.getCurrentPosition(
+    pos => {
+      // Muvaffaqiyat — koordinata olindi, ilovani ishga tushiramiz
+      initApp(pos.coords.latitude, pos.coords.longitude);
+    },
+    err => {
+      // Rad etildi yoki xato — fallback bilan ishga tushiramiz
+      const xabarlar = {
+        1: 'GPS ruxsat berilmadi — taxminiy joylashuv ishlatiladi',
+        2: 'GPS signali topilmadi — taxminiy joylashuv ishlatiladi',
+        3: 'GPS vaqt tugadi — taxminiy joylashuv ishlatiladi',
+      };
+      console.warn(xabarlar[err.code] || err.message);
+      initApp(null, null);
+    },
+    { enableHighAccuracy: true, timeout: 12000, maximumAge: 30000 }
+  );
+}
+
+function gpsDeny() {
+  // GPS ruxsatisiz — taxminiy joylashuv bilan ishlaydi
+  initApp(null, null);
+}
+
+// ============================================================
+//  AUDIO ENGINE
+// ============================================================
+let audioCtx = null;
+let sirenInterval = null;
+let sirenNodes = [];
+
+function initAudio() {
+  audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+}
+
+function playNotification(type = 'info') {
+  if (!audioCtx) return;
+  const notes = {
+    info    : [660, 880],
+    detect  : [440, 550, 660],
+    warning : [880, 660, 880, 1100],
+    allclear: [523, 659, 784],
+  };
+  const seq = notes[type] || notes.info;
+  let t = audioCtx.currentTime;
+  seq.forEach((freq, i) => {
+    const osc  = audioCtx.createOscillator();
+    const gain = audioCtx.createGain();
+    const t0   = t + i * 0.13;
+    osc.type = 'sine';
+    osc.frequency.setValueAtTime(freq, t0);
+    gain.gain.setValueAtTime(0, t0);
+    gain.gain.linearRampToValueAtTime(0.18, t0 + 0.02);
+    gain.gain.exponentialRampToValueAtTime(0.001, t0 + 0.25);
+    osc.connect(gain); gain.connect(audioCtx.destination);
+    osc.start(t0); osc.stop(t0 + 0.28);
+  });
+}
+
+// Bir marta sirena zarbasi
+function playSirenBurst(magnitude) {
+  if (!audioCtx) return;
+  const now = audioCtx.currentTime;
+  const vol = magnitude >= 6 ? 0.35 : 0.25;
+
+  // Past chastotali "BOOM" qismi
+  const sub = audioCtx.createOscillator();
+  const subGain = audioCtx.createGain();
+  sub.type = 'sine';
+  sub.frequency.setValueAtTime(80, now);
+  subGain.gain.setValueAtTime(0, now);
+  subGain.gain.linearRampToValueAtTime(vol * 0.5, now + 0.05);
+  subGain.gain.exponentialRampToValueAtTime(0.001, now + 0.4);
+  sub.connect(subGain); subGain.connect(audioCtx.destination);
+  sub.start(now); sub.stop(now + 0.45);
+
+  // Sirena wail
+  const osc = audioCtx.createOscillator();
+  const gain = audioCtx.createGain();
+  osc.type = 'sawtooth';
+  osc.frequency.setValueAtTime(440, now);
+  osc.frequency.linearRampToValueAtTime(880, now + 0.5);
+  osc.frequency.linearRampToValueAtTime(440, now + 1.0);
+  gain.gain.setValueAtTime(0, now);
+  gain.gain.linearRampToValueAtTime(vol, now + 0.05);
+  gain.gain.setValueAtTime(vol, now + 0.85);
+  gain.gain.linearRampToValueAtTime(0, now + 1.0);
+  osc.connect(gain); gain.connect(audioCtx.destination);
+  osc.start(now); osc.stop(now + 1.05);
+
+  sirenNodes.push(osc, gain, sub, subGain);
+}
+
+function startAlertSiren(magnitude) {
+  stopAlertSiren();
+  if (!audioCtx) return;
+  // Darhol birinchi zarbani chalish
+  playSirenBurst(magnitude);
+  // 1.2 soniyada bir marta takrorlanadi
+  sirenInterval = setInterval(() => playSirenBurst(magnitude), 1200);
+}
+
+function stopAlertSiren() {
+  if (sirenInterval) { clearInterval(sirenInterval); sirenInterval = null; }
+  sirenNodes = [];
+}
+
+function playAlert(magnitude) {
+  startAlertSiren(magnitude);
+}
+
+// ============================================================
+//  GPS
+// ============================================================
+
+// watchPosition ID saqlanadi
+let watchId = null;
+
+// GPS ni boshlash — initApp dan lat/lng olindi yoki null (fallback)
+function startGPS(initLat, initLng) {
+  if (initLat !== null && initLng !== null) {
+    userLat    = initLat;
+    userLng    = initLng;
+    userRegion = nearestRegion(userLat, userLng);
+    document.getElementById('gpsVal').textContent =
+      `${userLat.toFixed(4)}°N, ${userLng.toFixed(4)}°E — ${userRegion}`;
+    document.getElementById('statRegion').textContent = userRegion;
+    addLog(`GPS: ${userRegion} (aniq koordinata)`, 'ok');
+    document.getElementById('step1').style.opacity = '1';
+
+    // WS allaqachon ulangan bo'lsa REGISTER yuboramiz
+    // Agar ulanmagan bo'lsa — onopen da yuboriladi
+    if (APP_MODE === 'server' && wsConnected) {
+      wsSend({ type: 'REGISTER', device_id: DEVICE_ID, lat: userLat, lng: userLng });
+    }
+    startWatchPosition();
+  } else {
+    setFallbackLocation();
+  }
+}
+
+// watchPosition — koordinatani yangilab turadi (heartbeat emas)
+function startWatchPosition() {
+  if (watchId !== null) {
+    navigator.geolocation.clearWatch(watchId);
+    watchId = null;
+  }
+  if (!navigator.geolocation) return;
+  watchId = navigator.geolocation.watchPosition(
+    pos => {
+      userLat = pos.coords.latitude;
+      userLng = pos.coords.longitude;
+      userRegion = nearestRegion(userLat, userLng);
+      document.getElementById('gpsVal').textContent =
+        `${userLat.toFixed(4)}°N, ${userLng.toFixed(4)}°E — ${userRegion}`;
+      document.getElementById('statRegion').textContent = userRegion;
+    },
+    () => {},
+    { enableHighAccuracy: false, maximumAge: 30000 }
+  );
+}
+
+function setFallbackLocation() {
+  userLat = 41.2995; userLng = 69.2401; userRegion = 'Toshkent';
+  document.getElementById('gpsVal').textContent =
+    `${userLat}°N, ${userLng}°E — ${userRegion} (taxminiy)`;
+  document.getElementById('statRegion').textContent = userRegion;
+  addLog('GPS ruxsati berilmadi — Toshkent taxminiy joylashuv', 'detect');
+
+  if (APP_MODE === 'server' && wsConnected) {
+    wsSend({ type: 'REGISTER', device_id: DEVICE_ID, lat: userLat, lng: userLng });
+  }
+}
+
+// O'zbekiston viloyatlari
+const UZ_REGIONS = {
+  "Toshkent"        : [41.2995, 69.2401],
+  "Samarqand"       : [39.6270, 66.9750],
+  "Namangan"        : [41.0011, 71.6683],
+  "Andijon"         : [40.7821, 72.3442],
+  "Farg'ona"        : [40.3864, 71.7864],
+  "Qashqadaryo"     : [38.8610, 65.7919],
+  "Surxondaryo"     : [37.9401, 67.5699],
+  "Navoiy"          : [40.0840, 65.3792],
+  "Jizzax"          : [40.1158, 67.8422],
+  "Sirdaryo"        : [40.8393, 68.6614],
+  "Xorazm"          : [41.5533, 60.6236],
+  "Buxoro"          : [39.7680, 64.4219],
+  "Qoraqalpog'iston": [43.8041, 59.6021],
+};
+function haversine(lat1, lng1, lat2, lng2) {
+  const R = 6371, r = Math.PI/180;
+  const dl = (lat2-lat1)*r, dg = (lng2-lng1)*r;
+  const a = Math.sin(dl/2)**2 + Math.cos(lat1*r)*Math.cos(lat2*r)*Math.sin(dg/2)**2;
+  return R * 2 * Math.asin(Math.sqrt(a));
+}
+function nearestRegion(lat, lng) {
+  let best = 'Toshkent', bd = Infinity;
+  for (const [r, [rlat, rlng]] of Object.entries(UZ_REGIONS)) {
+    const d = haversine(lat, lng, rlat, rlng);
+    if (d < bd) { bd = d; best = r; }
+  }
+  return best;
+}
+
+// ============================================================
+//  WEBSOCKET
+// ============================================================
+let ws           = null;
+let wsReconnTimer = null;
+let wsConnected  = false;
+
+function connectWS(url) {
+  if (ws) { ws.close(); ws = null; }
+  clearTimeout(wsReconnTimer);
+  WS_URL = url;
+  document.getElementById('wsUrlChange').value = url;
+  document.getElementById('serverAddr').textContent = url;
+  setWsStatus('connecting', 'ULANILMOQDA...');
+  addLog(`Server ulanish: ${url}`, 'info');
+
+  try {
+    ws = new WebSocket(url);
+  } catch(e) {
+    addLog(`WebSocket xatosi: ${e.message}`, 'warn');
+    setWsStatus('disconnected', 'ULANISH XATOSI');
+    scheduleReconnect();
+    return;
+  }
+
+  ws.onopen = () => {
+    wsConnected = true;
+    setWsStatus('connected', 'SERVER ULANDI');
+    addLog('Server bilan WebSocket ulandi ✓', 'ok');
+    clearTimeout(wsReconnTimer);
+    // GPS tayyor bo'lsa ro'yxatdan o'tish
+    if (userLat !== null) {
+      wsSend({ type: 'REGISTER', device_id: DEVICE_ID, lat: userLat, lng: userLng });
+    }
+  };
+
+  ws.onmessage = e => {
+    try { handleServerMsg(JSON.parse(e.data)); }
+    catch(_) {}
+  };
+
+  ws.onclose = (ev) => {
+    wsConnected = false;
+    setWsStatus('disconnected', 'UZILDI');
+    addLog(`Server ulanishi uzildi (${ev.code}). 5s keyin qayta...`, 'detect');
+    scheduleReconnect();
+  };
+
+  ws.onerror = (err) => {
+    wsConnected = false;
+    setWsStatus('disconnected', 'ULANISH XATOSI');
+    addLog('WebSocket xatosi yuz berdi', 'warn');
+    // onerror doim onclose bilan keladi, shuning uchun bu yerda reconnect kerak emas
+  };
+}
+
+function scheduleReconnect() {
+  clearTimeout(wsReconnTimer);
+  wsReconnTimer = setTimeout(() => {
+    if (APP_MODE === 'server' && !wsConnected) {
+      addLog('Qayta ulanish urinilmoqda...', 'info');
+      connectWS(WS_URL);
+    }
+  }, 5000);
+}
+
+function wsSend(data) {
+  if (ws && ws.readyState === WebSocket.OPEN) {
+    ws.send(JSON.stringify(data));
+  }
+}
+
+function reconnectWS() {
+  const url = document.getElementById('wsUrlChange').value.trim();
+  if (url) connectWS(url);
+}
+
+function setWsStatus(state, text) {
+  const el = document.getElementById('wsStatus');
+  el.className = `ws-status ${state}`;
+  document.getElementById('wsStatusText').textContent = text;
+}
+
+// ── Server xabarlarini qayta ishlash ────────────────────────
+function handleServerMsg(msg) {
+  if (msg.type === 'PING') {
+    // Server keepalive — javob bermaymiz, faqat ulanish tirik
+    return;
+  }
+  if (msg.type === 'REGISTERED') {
+    addLog(`Server tasdiq: ${msg.region} | Tarmoq: ${msg.device_count} qurilma`, 'server');
+    document.getElementById('statDevices').textContent = msg.device_count;
+  }
+  else if (msg.type === 'PONG') {
+    document.getElementById('statDevices').textContent = msg.device_count;
+  }
+  else if (msg.type === 'ALERT') {
+    // Server tomonidan kelgan haqiqiy ogohlantirish
+    const eta = msg.eta_seconds;
+    const mag = msg.magnitude;
+    addLog(`🔴 SERVER ALERT! M${mag} | Epicentr: ${msg.epicenter}`, 'warn');
+    addLog(`📍 Masofа: ${msg.distance_km} km | ${eta}s ogohlantirish oynasi`, 'server');
+    handleAlert(mag, eta, msg.epicenter, msg.distance_km);
+  }
+}
+
+// ============================================================
+//  SEISMIC DETECTOR — STA/LTA
+// ============================================================
+const SAMPLE_RATE = 50;
+const STA_WIN     = 50;
+const LTA_WIN     = 500;
+const THRESHOLD   = 3.5;
+
+const staBuf = [], ltaBuf = [];
+let triggered     = false;
+let triggerTime   = null;
+let currentRatio  = 0;
+
+const histRatioBuffer = [];
+
+function feedSample(ax, ay, az) {
+  const amp = Math.sqrt(ax*ax + ay*ay + az*az);
+  staBuf.push(amp); if (staBuf.length > STA_WIN) staBuf.shift();
+  ltaBuf.push(amp); if (ltaBuf.length > LTA_WIN) ltaBuf.shift();
+  if (ltaBuf.length < LTA_WIN) return { triggered: false, ratio: 0 };
+
+  const sta = staBuf.reduce((a,b)=>a+b,0) / staBuf.length;
+  const lta = ltaBuf.reduce((a,b)=>a+b,0) / ltaBuf.length;
+  const ratio = lta > 1e-9 ? sta / lta : 0;
+  currentRatio = ratio;
+  histRatioBuffer.push(ratio);
+  if (histRatioBuffer.length > 600) histRatioBuffer.shift();
+
+  if (!triggered && ratio >= THRESHOLD) {
+    triggered   = true;
+    triggerTime = Date.now();
+    const mag   = estimateMag(amp);
+    return { triggered: true, ratio, magnitude: mag, amplitude: amp };
+  }
+  if (triggered && (Date.now() - triggerTime) > 18000) {
+    triggered = false; triggerTime = null;
+  }
+  return { triggered, ratio, magnitude: null };
+}
+
+function estimateMag(amp) {
+  return +Math.max(2.0, Math.min(8.9,
+    Math.log10(Math.max(amp, 1e-9)) * 1.5 + 3.2
+  )).toFixed(1);
+}
+
+// ============================================================
+//  SENSOR
+// ============================================================
+let simMode = 'idle', simEventTime = 0, simMag = 0;
+const WAVE_BUF = 400;
+const waveBuffer = [];
+
+// FIX #1 — real sensor ulanganda simulyatsiya to'xtatiladi
+let realSensorActive = false;
+let simIntervalId    = null;
+
+function startSensorLoop() {
+  // FIX #1 — intervalId saqlanadi
+  simIntervalId = setInterval(() => {
+    // FIX #1 — real sensor ulanganda simulyatsiya o'tkazib yuboriladi
+    if (realSensorActive) return;
+
+    const [ax, ay, az] = generateSimSample();
+    waveBuffer.push(Math.sqrt(ax*ax+ay*ay+az*az));
+    if (waveBuffer.length > WAVE_BUF) waveBuffer.shift();
+    const res = feedSample(ax, ay, az);
+    updateRatioUI(res.ratio);
+
+    if (res.triggered && res.magnitude && !alertActive) {
+      if (APP_MODE === 'server' && wsConnected) {
+        wsSend({
+          type     : 'TRIGGER',
+          device_id: DEVICE_ID,
+          magnitude: res.magnitude,
+          amplitude: res.amplitude || 0.1,
+        });
+        addLog(`P-to'lqin aniqlandi → serverga yuborildi (M${res.magnitude})`, 'detect');
+        document.getElementById('step2').style.opacity = '1';
+        document.getElementById('step3').style.opacity = '1';
+      } else {
+        handleAlert(res.magnitude, 15, userRegion, 0);
+      }
+    }
+  }, 1000 / SAMPLE_RATE);
+}
+
+function generateSimSample() {
+  const n = () => (Math.random()-.5) * 0.05;
+  if (simMode === 'idle') return [n(), n(), n()];
+  if (simMode === 'p_wave') {
+    const e = (Date.now() - simEventTime) / 1000;
+    const w = simMag*0.05 * Math.exp(-e*.9) * Math.sin(2*Math.PI*7*e);
+    if (e > 3) { simMode = 's_wave'; simEventTime = Date.now(); }
+    return [w+n(), w*.7+n(), w*.3+n()];
+  }
+  if (simMode === 's_wave') {
+    const e = (Date.now() - simEventTime) / 1000;
+    const w = simMag*0.18 * Math.exp(-e*.28) * Math.sin(2*Math.PI*2*e);
+    if (e > 14) simMode = 'idle';
+    return [w+n()*2, w*.8+n()*2, w*.4+n()*2];
+  }
+  return [0,0,0];
+}
+
+function requestMotion() {
+  if (typeof DeviceMotionEvent?.requestPermission === 'function') {
+    DeviceMotionEvent.requestPermission().then(s => {
+      if (s === 'granted') enableRealSensor();
+    });
+  } else enableRealSensor();
+}
+
+function enableRealSensor() {
+  // FIX #1 — simulyatsiyani bloklash bayrog'i
+  realSensorActive = true;
+
+  window.addEventListener('devicemotion', e => {
+    const a = e.accelerationIncludingGravity;
+    if (!a) return;
+    const ax=a.x||0, ay=a.y||0, az=(a.z||0)-9.81;
+    waveBuffer.push(Math.sqrt(ax*ax+ay*ay+az*az));
+    if (waveBuffer.length > WAVE_BUF) waveBuffer.shift();
+    const res = feedSample(ax, ay, az);
+    updateRatioUI(res.ratio);
+    if (res.triggered && res.magnitude && !alertActive) {
+      if (APP_MODE === 'server' && wsConnected) {
+        wsSend({ type:'TRIGGER', device_id:DEVICE_ID, magnitude:res.magnitude, amplitude:res.amplitude||0.1 });
+      } else {
+        handleAlert(res.magnitude, 15, userRegion, 0);
+      }
+    }
+  });
+  document.getElementById('sensorMode').textContent = 'Sensor: Haqiqiy akselerometr ✓';
+  document.getElementById('permBox').style.display = 'none';
+  addLog('Haqiqiy akselerometr ulandi — simulyatsiya o\'chirildi', 'ok');
+}
+
+// ============================================================
+//  CANVAS — Seismograph
+// ============================================================
+function resizeSeismo() {
+  const c = document.getElementById('seismoCanvas');
+  c.width = c.offsetWidth * devicePixelRatio;
+  c.height = c.offsetHeight * devicePixelRatio;
+}
+function drawSeismo() {
+  const c = document.getElementById('seismoCanvas');
+  const ctx = c.getContext('2d');
+  const W = c.width, H = c.height;
+  ctx.clearRect(0,0,W,H);
+  ctx.fillStyle = '#090d14'; ctx.fillRect(0,0,W,H);
+
+  ctx.strokeStyle='rgba(26,32,48,.8)'; ctx.lineWidth=1;
+  for (let i=1;i<4;i++) {
+    const y=H*i/4;
+    ctx.beginPath(); ctx.moveTo(0,y); ctx.lineTo(W,y); ctx.stroke();
+  }
+  ctx.strokeStyle='rgba(0,230,118,.15)'; ctx.setLineDash([4,6]);
+  ctx.beginPath(); ctx.moveTo(0,H/2); ctx.lineTo(W,H/2); ctx.stroke();
+  ctx.setLineDash([]);
+
+  if (waveBuffer.length < 2) return;
+  const color = alertActive ? '#ff3d3d' : '#00e676';
+  ctx.strokeStyle=color; ctx.lineWidth=1.5*devicePixelRatio;
+  ctx.shadowColor=color; ctx.shadowBlur=alertActive?10:4;
+  ctx.beginPath();
+  waveBuffer.forEach((v,i) => {
+    const x=(i/(WAVE_BUF-1))*W;
+    const y=H/2-(Math.min(v,3)/1.5)*(H*.38);
+    i===0?ctx.moveTo(x,y):ctx.lineTo(x,y);
+  });
+  ctx.stroke(); ctx.shadowBlur=0;
+
+  if (waveBuffer.length > 0) {
+    const lv=Math.min(waveBuffer[waveBuffer.length-1],3);
+    const ly=H/2-(lv/1.5)*(H*.38);
+    ctx.beginPath();
+    ctx.arc(W-2,ly,4*devicePixelRatio,0,Math.PI*2);
+    ctx.fillStyle=color; ctx.shadowColor=color; ctx.shadowBlur=10;
+    ctx.fill(); ctx.shadowBlur=0;
+  }
+}
+
+// ============================================================
+//  HISTORY CHART
+// ============================================================
+function drawHistory() {
+  const c=document.getElementById('histCanvas');
+  c.width=c.offsetWidth*devicePixelRatio;
+  c.height=c.offsetHeight*devicePixelRatio;
+  const ctx=c.getContext('2d'),W=c.width,H=c.height;
+  ctx.clearRect(0,0,W,H);
+  ctx.fillStyle='#090d14'; ctx.fillRect(0,0,W,H);
+  if (histRatioBuffer.length < 2) return;
+
+  const thY=H-(THRESHOLD/8)*H;
+  ctx.strokeStyle='rgba(255,215,64,.3)'; ctx.setLineDash([4,5]);
+  ctx.lineWidth=1;
+  ctx.beginPath(); ctx.moveTo(0,thY); ctx.lineTo(W,thY); ctx.stroke();
+  ctx.setLineDash([]);
+
+  const n=histRatioBuffer.length;
+  ctx.beginPath();
+  histRatioBuffer.forEach((v,i) => {
+    const x=(i/Math.max(n-1,1))*W;
+    const y=H-Math.min((v/8)*H,H);
+    i===0?ctx.moveTo(x,y):ctx.lineTo(x,y);
+  });
+  const grad=ctx.createLinearGradient(0,0,0,H);
+  grad.addColorStop(0,'rgba(0,230,118,.4)');
+  grad.addColorStop(1,'rgba(0,230,118,.02)');
+  ctx.lineTo(W,H); ctx.lineTo(0,H); ctx.closePath();
+  ctx.fillStyle=grad; ctx.fill();
+
+  ctx.beginPath();
+  histRatioBuffer.forEach((v,i) => {
+    const x=(i/Math.max(n-1,1))*W;
+    const y=H-Math.min((v/8)*H,H);
+    i===0?ctx.moveTo(x,y):ctx.lineTo(x,y);
+  });
+  ctx.strokeStyle='#00e676'; ctx.lineWidth=1.5; ctx.stroke();
+}
+
+// ============================================================
+//  DISTRICTS
+// ============================================================
+const DISTRICTS = [
+  {name:"Toshkent"},{name:"Samarqand"},{name:"Namangan"},
+  {name:"Andijon"},{name:"Farg'ona"},{name:"Qashqadaryo"},
+  {name:"Surxondaryo"},{name:"Navoiy"},
+];
+const districtMiniCanvases={}, districtWaves={};
+
+function buildDistricts() {
+  const grid=document.getElementById('districtsGrid');
+  DISTRICTS.forEach(d => {
+    districtWaves[d.name]=Array(40).fill(0);
+    const chip=document.createElement('div');
+    chip.className='district-chip'; chip.id='dc_'+d.name;
+    const dot=document.createElement('div');
+    dot.className='district-dot'; dot.id='dd_'+d.name;
+    const nm=document.createElement('div');
+    nm.className='district-name'; nm.textContent=d.name;
+    const cvs=document.createElement('canvas');
+    cvs.className='district-mini-wave';
+    cvs.style.cssText='height:22px;width:100%';
+    cvs.id='dmw_'+d.name;
+    districtMiniCanvases[d.name]=cvs;
+    chip.appendChild(dot); chip.appendChild(nm); chip.appendChild(cvs);
+    grid.appendChild(chip);
+  });
+}
+
+function updateDistrictWaves() {
+  DISTRICTS.forEach((d,i) => {
+    const cv=districtMiniCanvases[d.name]; if (!cv) return;
+    cv.width=cv.offsetWidth*devicePixelRatio||80;
+    cv.height=cv.offsetHeight*devicePixelRatio||22;
+    const ctx=cv.getContext('2d'),W=cv.width,H=cv.height;
+    ctx.clearRect(0,0,W,H);
+    const wave=districtWaves[d.name];
+    wave.push((Math.random()-.5)*.06+(alertActive&&i<5?(Math.random()-.5)*simMag*0.15:0));
+    if (wave.length>40) wave.shift();
+    const color=alertActive&&i<6?'#ff3d3d':'#00e676';
+    ctx.strokeStyle=color; ctx.lineWidth=1; ctx.beginPath();
+    wave.forEach((v,j)=>{
+      const x=(j/39)*W, y=H/2-v*H*2.5;
+      j===0?ctx.moveTo(x,y):ctx.lineTo(x,y);
+    });
+    ctx.stroke();
+  });
+}
+
+// ============================================================
+//  ALERT SYSTEM
+// ============================================================
+let alertActive=false, alertCountdown=0, countdownTimer=null, eventCount=0;
+
+function handleAlert(magnitude, etaSeconds=15, epicenter='', distanceKm=0) {
+  alertActive=true; alertCountdown=etaSeconds; eventCount++;
+  playAlert(magnitude);
+  showAlertUI(magnitude, epicenter, distanceKm);
+  addLog(`⚠ ZILZILA ANIQLANDI! M${magnitude}`, 'warn');
+  if (epicenter) addLog(`📍 Epicentr: ${epicenter} (${distanceKm} km uzoqlikda)`, 'server');
+  // Mobil tebranish
+  if (navigator.vibrate) navigator.vibrate([500,200,500,200,500,200,800]);
+
+  const banner=document.getElementById('alertBanner');
+  banner.classList.add('show');
+  document.getElementById('bannerEta').textContent=`${alertCountdown}s`;
+
+  clearInterval(countdownTimer);
+  countdownTimer=setInterval(()=>{
+    alertCountdown--;
+    document.getElementById('bannerEta').textContent=`${alertCountdown}s`;
+    document.getElementById('countdownEl').textContent=`⏱ ${alertCountdown} soniya`;
+    if (alertCountdown<=0) { clearInterval(countdownTimer); clearAlert(); }
+  }, 1000);
+
+  ['step1','step2','step3','step4'].forEach((id,i)=>{
+    setTimeout(()=>{ document.getElementById(id).style.opacity='1'; }, i*400);
+  });
+  document.getElementById('statEvents').textContent=eventCount;
+}
+
+function showAlertUI(magnitude, epicenter, distanceKm) {
+  document.getElementById('statusCard').classList.add('alert-active');
+  document.getElementById('statusLabel').className='status-label danger';
+  document.getElementById('statusLabel').textContent='⚠ ZILZILA!';
+  document.getElementById('statusIcon').textContent='🔴';
+  document.getElementById('magDisplay').className='mag-display show';
+  document.getElementById('magDisplay').innerHTML=`<sub>M</sub> ${magnitude}`;
+  document.getElementById('countdownEl').className='countdown show';
+  document.getElementById('demoBtn').disabled=true;
+
+  if (epicenter) {
+    const info=document.getElementById('epicenterInfo');
+    info.className='epicenter-info show';
+    info.textContent=`📍 ${epicenter} — ${distanceKm} km`;
+  }
+
+  DISTRICTS.forEach((d,i)=>{
+    if (i<6) setTimeout(()=>{
+      const chip=document.getElementById('dc_'+d.name);
+      if (chip) chip.classList.add('triggered');
+    }, i*300);
+  });
+}
+
+// FIX #2 — detektor holatini to'g'ri reset qilish funksiyasi
+function resetDetector() {
+  triggered   = false;
+  triggerTime = null;
+  staBuf.length = 0;
+  ltaBuf.length = 0;
+}
+
+function clearAlert() {
+  alertActive = false;
+  resetDetector();
+  stopAlertSiren();
+  playNotification('allclear');
+  addLog('✓ Zilzila to\'lqini o\'tdi. Barcha xavfsiz.','ok');
+  document.getElementById('alertBanner').classList.remove('show');
+  document.getElementById('statusCard').classList.remove('alert-active');
+  document.getElementById('statusLabel').className='status-label';
+  document.getElementById('statusLabel').textContent='XAVFSIZ';
+  document.getElementById('statusIcon').textContent='🟢';
+  document.getElementById('magDisplay').classList.remove('show');
+  document.getElementById('countdownEl').classList.remove('show');
+  document.getElementById('epicenterInfo').classList.remove('show');
+  document.getElementById('demoBtn').disabled=false;
+  DISTRICTS.forEach(d=>{
+    const chip=document.getElementById('dc_'+d.name);
+    if (chip) chip.classList.remove('triggered');
+  });
+  ['step1','step2','step3','step4'].forEach(id=>{
+    document.getElementById(id).style.opacity='.35';
+  });
+}
+
+// ============================================================
+//  DEMO TRIGGER
+// ============================================================
+function triggerDemo() {
+  if (alertActive) return;
+  simMag=4.5+Math.random()*2; simMode='p_wave'; simEventTime=Date.now();
+  addLog(`Demo zilzila boshlandi (M${simMag.toFixed(1)})`, 'detect');
+  playNotification('detect');
+  document.getElementById('statusLabel').className='status-label warn';
+  document.getElementById('statusLabel').textContent='ANIQLANMOQDA...';
+  document.getElementById('statusIcon').textContent='🟡';
+  document.getElementById('step1').style.opacity='1';
+  document.getElementById('step2').style.opacity='1';
+}
+
+// ============================================================
+//  UI HELPERS
+// ============================================================
+function updateRatioUI(ratio) {
+  const pct=Math.min((ratio/8)*100,100);
+  document.getElementById('ratioBar').style.width=pct+'%';
+  document.getElementById('ratioBar').style.background=
+    ratio>=THRESHOLD?'linear-gradient(90deg,#ff3d3d,#ff6060)':
+    ratio>=2?'linear-gradient(90deg,var(--yellow),#ffa726)':
+    'linear-gradient(90deg,var(--green),#69f0ae)';
+  document.getElementById('ratioVal').textContent=ratio.toFixed(1);
+  const sv=document.getElementById('statRatio');
+  sv.textContent=ratio.toFixed(1);
+  sv.style.color=ratio>=THRESHOLD?'var(--red)':ratio>=2?'var(--yellow)':'var(--green)';
+  const fill=Math.min(ratio/THRESHOLD,1);
+  const circ=document.getElementById('ringCircle');
+  circ.style.strokeDashoffset=345-345*fill;
+  circ.style.stroke=ratio>=THRESHOLD?'var(--red)':ratio>=2?'var(--yellow)':'var(--green)';
+}
+
+const logMessages=[];
+function addLog(msg, level='info') {
+  const time=new Date().toTimeString().slice(0,8);
+  logMessages.unshift({time,msg,level});
+  if (logMessages.length>40) logMessages.pop();
+  renderLog();
+}
+function renderLog() {
+  const list=document.getElementById('logList');
+  list.innerHTML='';
+  logMessages.forEach(e=>{
+    const row=document.createElement('div');
+    row.className='log-entry';
+    row.innerHTML=`<span class="log-time">${e.time}</span><span class="log-msg ${e.level}">${e.msg}</span>`;
+    list.appendChild(row);
+  });
+}
+function updateClock() {
+  document.getElementById('clockEl').textContent=
+    new Date().toLocaleTimeString('uz-UZ',{hour12:false});
+}
+
+// Heartbeat interval
+setInterval(()=>{
+  if (APP_MODE==='server' && wsConnected && userLat!==null) {
+    wsSend({type:'HEARTBEAT', device_id:DEVICE_ID, lat:userLat, lng:userLng});
+  }
+}, 30000);
+
+// ============================================================
+//  MOBILE CHECK
+// ============================================================
+function checkMobileSupport() {
+  if (typeof DeviceMotionEvent!=='undefined' && /Mobi|Android/i.test(navigator.userAgent)) {
+    document.getElementById('permBox').style.display='block';
+  }
+}
+
+// ============================================================
+//  MAIN INIT
+// ============================================================
+// initApp — overlay da olingan GPS koordinatalari bilan chaqiriladi
+function initApp(initLat, initLng) {
+  document.getElementById('soundUnlock').style.display = 'none';
+  initAudio();
+  buildDistricts();
+  checkMobileSupport();
+  resizeSeismo();
+
+  document.getElementById('deviceIdEl').textContent = `ID: ${DEVICE_ID}`;
+
+  if (APP_MODE === 'server') {
+    const overlayUrl = document.getElementById('wsUrlInput').value.trim();
+    if (overlayUrl) WS_URL = overlayUrl;
+    document.getElementById('wsUrlChange').value = WS_URL;
+    document.getElementById('serverBox').style.display = 'block';
+    connectWS(WS_URL);
+    addLog('Server rejimi faol', 'server');
+    addLog(`Device ID: ${DEVICE_ID}`, 'info');
+  } else {
+    document.getElementById('statDevices').textContent = '1 (lokal)';
+    addLog('Lokal rejim — faqat bu qurilma', 'info');
+  }
+
+  // GPS — overlay da allaqachon olingan koordinata ishlatiladi
+  startGPS(initLat, initLng);
+
+  startSensorLoop();
+
+  addLog('Tizim ishga tushirildi', 'ok');
+  addLog(`Platforma: ${/Mobi|Android|iPhone/i.test(navigator.userAgent) ? 'Mobil' : 'Desktop'}`, 'info');
+  addLog('STA/LTA monitoring faol (50 Hz)', 'ok');
+  playNotification('info');
+
+  function loop() {
+    drawSeismo();
+    updateDistrictWaves();
+    updateClock();
+    drawHistory();
+    requestAnimationFrame(loop);
+  }
+  loop();
+
+  window.addEventListener('resize', resizeSeismo);
+}
+</script>
+</body>
+</html>
