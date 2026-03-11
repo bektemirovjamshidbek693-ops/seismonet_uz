@@ -15,6 +15,7 @@
     --yellow:   #ffd740;
     --red:      #ff3d3d;
     --blue:     #40c4ff;
+    --purple:   #b388ff;
     --text:     #e8eaf0;
     --muted:    #5a6278;
     --font-h:   'Syne', sans-serif;
@@ -1309,15 +1310,16 @@ function initApp(initLat, initLng) {
     addLog('Lokal rejim — faqat bu qurilma', 'info');
   }
 
-  // GPS — overlay da allaqachon olingan koordinata ishlatiladi
   startGPS(initLat, initLng);
-
   startSensorLoop();
 
   addLog('Tizim ishga tushirildi', 'ok');
   addLog(`Platforma: ${/Mobi|Android|iPhone/i.test(navigator.userAgent) ? 'Mobil' : 'Desktop'}`, 'info');
   addLog('STA/LTA monitoring faol (50 Hz)', 'ok');
   playNotification('info');
+
+  // URL hash ni tozalash (demo dan qaytganda #app bo'ladi)
+  if (location.hash) history.replaceState(null, '', location.pathname + location.search);
 
   function loop() {
     drawSeismo();
@@ -1329,6 +1331,13 @@ function initApp(initLat, initLng) {
   loop();
 
   window.addEventListener('resize', resizeSeismo);
+}
+
+// Demo paneldan qaytganda (#app hash) overlay ni o'tkazib yuborish
+if (location.hash === '#app') {
+  window.addEventListener('DOMContentLoaded', () => {
+    initApp(null, null);
+  });
 }
 </script>
 </body>

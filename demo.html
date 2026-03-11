@@ -269,7 +269,7 @@
 <!-- DEMO BADGE -->
 <div class="demo-badge">
   <div class="demo-badge-left">⚗ DEMO SINOV PANELI — FAQAT TEST UCHUN</div>
-  <a href="index.html">← Asosiy ilovaga qaytish</a>
+  <a href="index.html#app" id="backLink">← Asosiy ilovaga qaytish</a>
 </div>
 
 <div class="wrap">
@@ -400,7 +400,113 @@
 
 <script>
 // ============================================================
-//  MA'LUMOTLAR
+//  AUDIO ENGINE (index.html bilan bir xil)
+// ============================================================
+let audioCtx = null;
+let sirenInterval = null;
+
+function initAudio() {
+  try { audioCtx = new (window.AudioContext || window.webkitAudioContext)(); } catch(e) {}
+}
+
+function playTone(freqs, type = 'sine', vol = 0.18) {
+  if (!audioCtx) return;
+  let t = audioCtx.currentTime;
+  freqs.forEach((freq, i) => {
+    const osc  = audioCtx.createOscillator();
+    const gain = audioCtx.createGain();
+    const t0   = t + i * 0.13;
+    osc.type = type;
+    osc.frequency.setValueAtTime(freq, t0);
+    gain.gain.setValueAtTime(0, t0);
+    gain.gain.linearRampToValueAtTime(vol, t0 + 0.02);
+    gain.gain.exponentialRampToValueAtTime(0.001, t0 + 0.28);
+    osc.connect(gain); gain.connect(audioCtx.destination);
+    osc.start(t0); osc.stop(t0 + 0.32);
+  });
+}
+
+function playSirenBurst(magnitude) {
+  if (!audioCtx) return;
+  const now = audioCtx.currentTime;
+  const vol = magnitude >= 6 ? 0.32 : 0.22;
+  const sub = audioCtx.createOscillator();
+  const subGain = audioCtx.createGain();
+  sub.type = 'sine';
+  sub.frequency.setValueAtTime(80, now);
+  subGain.gain.setValueAtTime(0, now);
+  subGain.gain.linearRampToValueAtTime(vol * 0.5, now + 0.05);
+  subGain.gain.exponentialRampToValueAtTime(0.001, now + 0.4);
+  sub.connect(subGain); subGain.connect(audioCtx.destination);
+  sub.start(now); sub.stop(now + 0.45);
+
+  const osc = audioCtx.createOscillator();
+  const gain = audioCtx.createGain();
+  osc.type = 'sawtooth';
+  osc.frequency.setValueAtTime(440, now);
+  osc.frequency.linearRampToValueAtTime(880, now + 0.5);
+  osc.frequency.linearRampToValueAtTime(440, now + 1.0);
+  gain.gain.setValueAtTime(0, now);
+  gain.gain.linearRampToValueAtTime(vol, now + 0.05);
+  gain.gain.setValueAtTime(vol, now + 0.85);
+  gain.gain.linearRampToValueAtTime(0, now + 1.0);
+  osc.connect(gain); gain.connect(audioCtx.destination);
+  osc.start(now); osc.stop(now + 1.05);
+}
+
+function startSiren(mag) {
+  stopSiren();
+  playSirenBurst(mag);
+  sirenInterval = setInterval(() => playSirenBurst(mag), 1200);
+}
+
+function stopSiren() {
+  if (sirenInterval) { clearInterval(sirenInterval); sirenInterval = null; }
+}
+
+// ============================================================
+//  WEBSOCKET (server rejimida demo paneliga ham ALERT kelishi mumkin)
+// ============================================================
+let ws = null;
+let wsConnected = false;
+let wsReconnTimer = null;
+// Demo paneldan server URL ni olish (index.html dagi kabi)
+const WS_URL = (location.protocol === 'https:')
+  ? 'wss://' + location.host + '/ws'
+  : 'ws://' + location.host + '/ws';
+const DEMO_DEVICE_ID = 'demo_' + Math.random().toString(36).slice(2, 8);
+
+function connectDemoWS() {
+  try {
+    ws = new WebSocket(WS_URL);
+  } catch(e) { return; }
+
+  ws.onopen = () => {
+    wsConnected = true;
+    addLog(`Server ulandi (demo kuzatuvchi rejimi)`, 'server');
+    ws.send(JSON.stringify({ type: 'REGISTER', device_id: DEMO_DEVICE_ID, lat: 41.2995, lng: 69.2401 }));
+  };
+  ws.onmessage = e => {
+    try {
+      const msg = JSON.parse(e.data);
+      if (msg.type === 'PING') return; // keepalive, e'tibor bermaymiz
+      if (msg.type === 'ALERT') {
+        addLog(`🔴 HAQIQIY SERVER ALERT! M${msg.magnitude} — ${msg.epicenter}`, 'warn');
+        startSiren(msg.magnitude);
+        setStatus('alert', msg.magnitude);
+        setTimeout(() => { stopSiren(); setStatus('ok'); }, (msg.eta_seconds || 30) * 1000);
+      }
+    } catch(_) {}
+  };
+  ws.onclose = () => {
+    wsConnected = false;
+    clearTimeout(wsReconnTimer);
+    wsReconnTimer = setTimeout(connectDemoWS, 8000);
+  };
+  ws.onerror = () => { wsConnected = false; };
+}
+
+// MA'LUMOTLAR
 // ============================================================
 const UZ_REGIONS = {
   "Toshkent"         : { lat: 41.2995, lng: 69.2401 },
@@ -454,11 +560,12 @@ const logMessages  = [];
 //  ISHGA TUSHIRISH
 // ============================================================
 window.addEventListener('DOMContentLoaded', () => {
-  // URL da ?demo=true bo'lishi kerak
+  // URL da ?demo=true bo'lishi yoki index.html dan kelishi kerak
   const params = new URLSearchParams(window.location.search);
+  // index.html dagi demo tugmasi ?demo=true bilan ochadi — shu shart saqlanadi
   if (!params.has('demo')) {
     document.body.innerHTML = `
-      <div style="display:flex;align-items:center;justify-content:center;min-height:100vh;flex-direction:column;gap:16px;font-family:monospace;color:#5a6278;">
+      <div style="display:flex;align-items:center;justify-content:center;min-height:100vh;flex-direction:column;gap:16px;font-family:monospace;color:#5a6278;background:#07090f;">
         <div style="font-size:2rem">🔒</div>
         <div style="font-size:.9rem;letter-spacing:2px;">DEMO REJIMI YOQILMAGAN</div>
         <div style="font-size:.72rem;">URL ga <code style="color:#b388ff;">?demo=true</code> qo'shing</div>
@@ -467,6 +574,12 @@ window.addEventListener('DOMContentLoaded', () => {
     return;
   }
 
+  // Audio faqat birinchi klik bilan ishga tushadi
+  document.addEventListener('click', () => { if (!audioCtx) initAudio(); }, { once: true });
+
+  // Server bilan ulanishga harakat qilamiz (kuzatuvchi sifatida)
+  connectDemoWS();
+
   buildRegionGrid();
   buildDeviceList();
   buildAllRegionsGrid();
@@ -474,7 +587,7 @@ window.addEventListener('DOMContentLoaded', () => {
   resizeCanvas();
   drawWave();
   addLog('Demo panel ishga tushdi', 'ok');
-  addLog(`URL: ${window.location.href}`, 'info');
+  addLog(`Qurilma ID: ${DEMO_DEVICE_ID}`, 'info');
 
   window.addEventListener('resize', resizeCanvas);
 });
@@ -684,6 +797,10 @@ function broadcastAlert(epic, mag) {
   setStatus('alert', mag);
   setStep(4, 'done'); setStep(5, 'active');
 
+  // Sirena va tebranish
+  startSiren(mag);
+  if (navigator.vibrate) navigator.vibrate([500,200,500,200,500]);
+
   // Barcha viloyatlarga ETA bilan alert
   Object.entries(UZ_REGIONS).forEach(([r, coords], i) => {
     const eta = calcEta(epic, coords);
@@ -704,6 +821,7 @@ function broadcastAlert(epic, mag) {
   // Simulyatsiya tugashi
   simTimers.push(setTimeout(() => {
     setStep(5, 'done');
+    stopSiren();
     addLog('━━━ SIMULYATSIYA TUGADI ━━━', 'ok');
     simPhase = 'done';
     document.getElementById('resetBtn').disabled = false;
@@ -741,9 +859,10 @@ function updateEtaTableAlert(epic) {
 // ============================================================
 function resetAll() {
   simTimers.forEach(t => clearTimeout(t));
-  simTimers = [];
+  simTimers  = [];
   simRunning = false;
   simPhase   = 'idle';
+  stopSiren();
 
   setStatus('ok');
   ['ps1','ps2','ps3','ps4','ps5'].forEach(id => {
