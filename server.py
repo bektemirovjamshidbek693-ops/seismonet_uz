@@ -94,11 +94,13 @@ def calc_epicenter(triggers: list[dict]) -> dict:
     }
 
 # ── Alert yuborish ──────────────────────────────────────────────────
-async def broadcast_alert(epicenter: dict):
+async def broadcast_alert(epicenter: dict, force: bool = False):
     """Barcha ulangan qurilmalarga ETA hisoblash va alert yuborish."""
     now = time.time()
-    if now - state.last_alert_time < 60:
-        return  # spam himoya
+    cooldown = int(os.environ.get("ALERT_COOLDOWN", "60"))
+    if not force and (now - state.last_alert_time) < cooldown:
+        print(f"[!] Alert cooldown ({cooldown}s) — o'tkazib yuborildi")
+        return
     state.last_alert_time = now
     state.total_alerts   += 1
 
@@ -112,7 +114,7 @@ async def broadcast_alert(epicenter: dict):
     print(f"  Ulangan qurilmalar: {len(state.connections)}")
     print(f"{'='*55}")
 
-    # Har bir qurilmaga individual ETA — alert davomiyligi 5 soniya
+    # Har bir qurilmaga individual ETA — alert davomiyligi env dan olinadi (default 5s)
     ALERT_DURATION = int(os.environ.get("ALERT_DURATION", "5"))
     dead = []
     for device_id, ws in state.connections.items():
@@ -135,7 +137,7 @@ async def broadcast_alert(epicenter: dict):
 
         print(f"  → {device_id[:12]:12s} | "
               f"{eta['distance_km']:6.0f} km | "
-              f"{ALERT_DURATION}s ogohlantirish")
+              f"{ALERT_DURATION}s alert")
 
         try:
             await ws.send_text(json.dumps(msg))
@@ -206,6 +208,10 @@ async def websocket_endpoint(ws: WebSocket):
                 if not device_id:
                     continue
 
+                # Demo qurilmadan kelgan FORCE trigger — cooldownni chetlab o'tadi
+                is_demo = device_id.startswith("demo_")
+                force   = is_demo
+
                 trigger = {
                     "device_id" : device_id,
                     "lat"       : state.devices[device_id]["lat"],
@@ -230,12 +236,13 @@ async def websocket_endpoint(ws: WebSocket):
                 min_dev = int(os.environ.get("MIN_DEVICES", "1"))
                 print(f"[T] {device_id[:12]:12s} "
                       f"M{trigger['magnitude']} | "
-                      f"Triggerlar: {len(unique)}/{min_dev}")
+                      f"Triggerlar: {len(unique)}/{min_dev}"
+                      f"{' (DEMO-FORCE)' if force else ''}")
 
-                # MIN_DEVICES+ qurilma → alert (default: 1)
+                # MIN_DEVICES+ qurilma → alert
                 if len(unique) >= min_dev:
                     epicenter = calc_epicenter(list(unique.values()))
-                    await broadcast_alert(epicenter)
+                    await broadcast_alert(epicenter, force=force)
                     state.recent_triggers.clear()
 
             # ── Heartbeat ──

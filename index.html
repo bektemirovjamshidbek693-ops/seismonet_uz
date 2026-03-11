@@ -840,11 +840,11 @@ function handleServerMsg(msg) {
     document.getElementById('statDevices').textContent = msg.device_count;
   }
   else if (msg.type === 'ALERT') {
-    // Server tomonidan kelgan haqiqiy ogohlantirish
+    if (alertActive) return; // allaqachon faol — ikki marta ishga tushmasin
     const eta = msg.eta_seconds;
     const mag = msg.magnitude;
     addLog(`🔴 SERVER ALERT! M${mag} | Epicentr: ${msg.epicenter}`, 'warn');
-    addLog(`📍 Masofа: ${msg.distance_km} km | ${eta}s ogohlantirish oynasi`, 'server');
+    addLog(`📍 Masofa: ${msg.distance_km} km | ${eta}s ogohlantirish`, 'server');
     handleAlert(mag, eta, msg.epicenter, msg.distance_km);
   }
 }
