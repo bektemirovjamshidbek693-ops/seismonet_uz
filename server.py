@@ -112,7 +112,8 @@ async def broadcast_alert(epicenter: dict):
     print(f"  Ulangan qurilmalar: {len(state.connections)}")
     print(f"{'='*55}")
 
-    # Har bir qurilmaga individual ETA
+    # Har bir qurilmaga individual ETA — alert davomiyligi 5 soniya
+    ALERT_DURATION = int(os.environ.get("ALERT_DURATION", "5"))
     dead = []
     for device_id, ws in state.connections.items():
         dev = state.devices.get(device_id, {})
@@ -120,8 +121,6 @@ async def broadcast_alert(epicenter: dict):
         dlng = dev.get("lng", elng)
 
         eta = eta_seconds(elat, elng, dlat, dlng)
-        proc_delay = time.time() - now
-        warning    = max(1, round(eta["warning_window"] - proc_delay - 0.3))
 
         msg = {
             "type"          : "ALERT",
@@ -130,13 +129,13 @@ async def broadcast_alert(epicenter: dict):
             "epicenter_lat" : elat,
             "epicenter_lng" : elng,
             "distance_km"   : eta["distance_km"],
-            "eta_seconds"   : warning,
+            "eta_seconds"   : ALERT_DURATION,
             "s_arrival_s"   : eta["s_arrival_s"],
         }
 
         print(f"  → {device_id[:12]:12s} | "
               f"{eta['distance_km']:6.0f} km | "
-              f"{warning}s ogohlantirish")
+              f"{ALERT_DURATION}s ogohlantirish")
 
         try:
             await ws.send_text(json.dumps(msg))
