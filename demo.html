@@ -492,19 +492,21 @@ function connectDemoWS() {
       if (msg.type === 'PING') return;
       if (msg.type === 'REGISTERED') {
         addLog(`Server: ${msg.device_count} qurilma ulangan`, 'server');
-        return;
       }
       if (msg.type === 'ALERT') {
-        // Agar lokal simulyatsiya allaqachon alert ko'rsatayotgan bo'lsa — faqat log
-        if (simRunning) {
-          addLog(`📡 Boshqa qurilmalarga ALERT yuborildi (M${msg.magnitude})`, 'server');
-          return;
+        // Server alerti keldi — agar simulyatsiya allaqachon siren chalayotgan bo'lsa,
+        // faqat log qo'shamiz, sireni qayta boshlamaymiz
+        if (!sirenInterval) {
+          addLog(`🔴 SERVER ALERT! M${msg.magnitude} — ${msg.epicenter}`, 'warn');
+          startSiren(msg.magnitude);
+          setStatus('alert', msg.magnitude);
         }
-        // Tashqi haqiqiy alert — to'liq ko'rsatamiz
-        addLog(`🔴 HAQIQIY SERVER ALERT! M${msg.magnitude} — ${msg.epicenter}`, 'warn');
-        startSiren(msg.magnitude);
-        setStatus('alert', msg.magnitude);
-        setTimeout(() => { stopSiren(); setStatus('ok'); }, (msg.eta_seconds || 5) * 1000);
+        // Siren va status har doim 5s keyin tozalanadi
+        clearTimeout(ws._alertClearTimer);
+        ws._alertClearTimer = setTimeout(() => {
+          stopSiren();
+          setStatus('ok');
+        }, (msg.eta_seconds || 5) * 1000);
       }
     } catch(_) {}
   };
@@ -795,19 +797,6 @@ function serverConfirm(epic, mag) {
   addLog(`Server: 3+ qurilma tasdiqladi → epicentr hisoblanmoqda...`, 'server');
   setStep(2, 'done'); setStep(3, 'active');
 
-  // Serverga haqiqiy TRIGGER yuboramiz — barcha ulangan qurilmalar ALERT oladi
-  if (ws && wsConnected) {
-    ws.send(JSON.stringify({
-      type      : 'TRIGGER',
-      device_id : DEMO_DEVICE_ID,
-      magnitude : mag,
-      amplitude : mag * 0.1,
-    }));
-    addLog(`▶ Serverga TRIGGER yuborildi (demo_force) — boshqa qurilmalar ogohlantiriladi`, 'server');
-  } else {
-    addLog(`Server ulanmagan — faqat lokal simulyatsiya`, 'detect');
-  }
-
   simTimers.push(setTimeout(() => {
     addLog(`Epicentr: ${selectedRegion} (${epic.lat.toFixed(3)}°N, ${epic.lng.toFixed(3)}°E)`, 'server');
     setStep(3, 'done'); setStep(4, 'active');
@@ -820,29 +809,33 @@ function broadcastAlert(epic, mag) {
   setStatus('alert', mag);
   setStep(4, 'done'); setStep(5, 'active');
 
+  // Sirena va tebranish
   startSiren(mag);
   if (navigator.vibrate) navigator.vibrate([500,200,500,200,500]);
 
-  // Viloyatlar UI ni yangilash (lokal vizualizatsiya)
+  // Barcha viloyatlarga ETA bilan alert
   Object.entries(UZ_REGIONS).forEach(([r, coords], i) => {
     const eta = calcEta(epic, coords);
+    const delay = i * 60;
+
     simTimers.push(setTimeout(() => {
       triggerRegion(r, eta);
       addLog(`${r}: ${eta.warning}s ogohlantirish oynasi`, eta.warning < 15 ? 'warn' : 'detect');
-    }, i * 60));
+    }, delay));
   });
 
+  // ETA jadvali jadalni yangilash
   updateEtaTableAlert(epic);
+
+  // To'lqin animatsiyasi
   simPhase = 'p_wave'; simStartTime = Date.now();
 
-  // 5 soniyada simulyatsiya tugaydi
+  // Simulyatsiya tugashi
   simTimers.push(setTimeout(() => {
     setStep(5, 'done');
     stopSiren();
-    setStatus('ok');
     addLog('━━━ SIMULYATSIYA TUGADI ━━━', 'ok');
-    simPhase  = 'done';
-    simRunning = false;
+    simPhase = 'done';
     document.getElementById('resetBtn').disabled = false;
   }, 5000));
 }

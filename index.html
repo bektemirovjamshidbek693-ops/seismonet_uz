@@ -840,11 +840,11 @@ function handleServerMsg(msg) {
     document.getElementById('statDevices').textContent = msg.device_count;
   }
   else if (msg.type === 'ALERT') {
-    if (alertActive) return; // allaqachon faol — ikki marta ishga tushmasin
+    // Server tomonidan kelgan haqiqiy ogohlantirish
     const eta = msg.eta_seconds;
     const mag = msg.magnitude;
     addLog(`🔴 SERVER ALERT! M${mag} | Epicentr: ${msg.epicenter}`, 'warn');
-    addLog(`📍 Masofa: ${msg.distance_km} km | ${eta}s ogohlantirish`, 'server');
+    addLog(`📍 Masofа: ${msg.distance_km} km | ${eta}s ogohlantirish oynasi`, 'server');
     handleAlert(mag, eta, msg.epicenter, msg.distance_km);
   }
 }
@@ -930,7 +930,7 @@ function startSensorLoop() {
         document.getElementById('step2').style.opacity = '1';
         document.getElementById('step3').style.opacity = '1';
       } else {
-        handleAlert(res.magnitude, 5, userRegion, 0);
+        handleAlert(res.magnitude, 15, userRegion, 0);
       }
     }
   }, 1000 / SAMPLE_RATE);
@@ -978,7 +978,7 @@ function enableRealSensor() {
       if (APP_MODE === 'server' && wsConnected) {
         wsSend({ type:'TRIGGER', device_id:DEVICE_ID, magnitude:res.magnitude, amplitude:res.amplitude||0.1 });
       } else {
-        handleAlert(res.magnitude, 5, userRegion, 0);
+        handleAlert(res.magnitude, 15, userRegion, 0);
       }
     }
   });
@@ -1128,13 +1128,23 @@ function updateDistrictWaves() {
 // ============================================================
 let alertActive=false, alertCountdown=0, countdownTimer=null, eventCount=0;
 
-function handleAlert(magnitude, etaSeconds=15, epicenter='', distanceKm=0) {
-  alertActive=true; alertCountdown=etaSeconds; eventCount++;
+function handleAlert(magnitude, etaSeconds=5, epicenter='', distanceKm=0) {
+  // Agar alert allaqachon faol bo'lsa — countdown ni yangilaymiz, UI ni qayta ko'rsatmaymiz
+  if (alertActive) {
+    alertCountdown = etaSeconds;
+    document.getElementById('bannerEta').textContent=`${alertCountdown}s`;
+    document.getElementById('countdownEl').textContent=`⏱ ${alertCountdown} soniya`;
+    return;
+  }
+
+  alertActive=true;
+  alertCountdown=etaSeconds;
+  eventCount++;
+
   playAlert(magnitude);
   showAlertUI(magnitude, epicenter, distanceKm);
   addLog(`⚠ ZILZILA ANIQLANDI! M${magnitude}`, 'warn');
   if (epicenter) addLog(`📍 Epicentr: ${epicenter} (${distanceKm} km uzoqlikda)`, 'server');
-  // Mobil tebranish
   if (navigator.vibrate) navigator.vibrate([500,200,500,200,500,200,800]);
 
   const banner=document.getElementById('alertBanner');
@@ -1144,9 +1154,9 @@ function handleAlert(magnitude, etaSeconds=15, epicenter='', distanceKm=0) {
   clearInterval(countdownTimer);
   countdownTimer=setInterval(()=>{
     alertCountdown--;
-    document.getElementById('bannerEta').textContent=`${alertCountdown}s`;
-    document.getElementById('countdownEl').textContent=`⏱ ${alertCountdown} soniya`;
-    if (alertCountdown<=0) { clearInterval(countdownTimer); clearAlert(); }
+    document.getElementById('bannerEta').textContent=`${Math.max(0,alertCountdown)}s`;
+    document.getElementById('countdownEl').textContent=`⏱ ${Math.max(0,alertCountdown)} soniya`;
+    if (alertCountdown<=0) { clearInterval(countdownTimer); countdownTimer=null; clearAlert(); }
   }, 1000);
 
   ['step1','step2','step3','step4'].forEach((id,i)=>{
