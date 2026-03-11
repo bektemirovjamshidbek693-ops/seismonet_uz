@@ -1,0 +1,888 @@
+<!DOCTYPE html>
+<html lang="uz">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>SeismoNet UZ — Demo Panel</title>
+<link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;700;800&family=IBM+Plex+Mono:wght@300;400;600&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg:      #07090f;
+    --surface: #0d1117;
+    --border:  #1a2030;
+    --green:   #00e676;
+    --yellow:  #ffd740;
+    --red:     #ff3d3d;
+    --blue:    #40c4ff;
+    --purple:  #b388ff;
+    --text:    #e8eaf0;
+    --muted:   #5a6278;
+    --font-h:  'Syne', sans-serif;
+    --font-m:  'IBM Plex Mono', monospace;
+  }
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    background: var(--bg); color: var(--text);
+    font-family: var(--font-m); min-height: 100vh; overflow-x: hidden;
+  }
+  body::before {
+    content: ''; position: fixed; inset: 0; z-index: 0; pointer-events: none;
+    background-image:
+      linear-gradient(rgba(179,136,255,.03) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(179,136,255,.03) 1px, transparent 1px);
+    background-size: 40px 40px;
+  }
+
+  /* ── DEMO BADGE ── */
+  .demo-badge {
+    position: fixed; top: 0; left: 0; right: 0; z-index: 100;
+    background: linear-gradient(90deg, #2d1b69, #1a0a3d);
+    border-bottom: 1px solid rgba(179,136,255,.3);
+    padding: 8px 20px;
+    display: flex; align-items: center; justify-content: space-between;
+    font-size: .7rem; letter-spacing: 2px;
+  }
+  .demo-badge-left {
+    display: flex; align-items: center; gap: 10px; color: var(--purple);
+  }
+  .demo-badge-left::before {
+    content: ''; width: 8px; height: 8px; border-radius: 50%;
+    background: var(--purple); box-shadow: 0 0 8px var(--purple);
+    animation: pulse 1.5s infinite;
+  }
+  @keyframes pulse {
+    0%, 100% { opacity: 1; } 50% { opacity: .3; }
+  }
+  .demo-badge a {
+    color: var(--muted); text-decoration: none; font-size: .65rem;
+    padding: 3px 10px; border: 1px solid var(--border); border-radius: 10px;
+    transition: color .2s, border-color .2s;
+  }
+  .demo-badge a:hover { color: var(--text); border-color: var(--muted); }
+
+  .wrap { position: relative; z-index: 1; max-width: 1100px; margin: 0 auto; padding: 50px 20px 40px; }
+
+  /* ── HEADER ── */
+  .demo-header { margin-bottom: 28px; }
+  .demo-title {
+    font-family: var(--font-h); font-size: 1.4rem; font-weight: 800;
+    letter-spacing: 3px; color: var(--purple); margin-bottom: 4px;
+  }
+  .demo-title span { color: var(--muted); opacity: .6; }
+  .demo-sub { font-size: .7rem; color: var(--muted); letter-spacing: 2px; }
+
+  /* ── GRID ── */
+  .demo-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 14px;
+  }
+  @media (max-width: 720px) { .demo-grid { grid-template-columns: 1fr; } }
+
+  /* ── CARD ── */
+  .card {
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: 12px; padding: 18px; position: relative; overflow: hidden;
+  }
+  .card::before {
+    content: ''; position: absolute; top: 0; left: 0; right: 0; height: 2px;
+    background: linear-gradient(90deg, transparent, var(--purple), transparent);
+    opacity: .4;
+  }
+  .card.full { grid-column: 1 / -1; }
+  .card-label {
+    font-size: .62rem; color: var(--muted); letter-spacing: 2px;
+    text-transform: uppercase; margin-bottom: 14px;
+  }
+
+  /* ── MAGNITUDE SLIDER ── */
+  .mag-row {
+    display: flex; align-items: center; gap: 12px; margin-bottom: 14px;
+  }
+  .mag-val {
+    font-family: var(--font-h); font-size: 2.4rem; font-weight: 800;
+    min-width: 60px; text-align: center; transition: color .3s;
+  }
+  .mag-val.low    { color: var(--green); }
+  .mag-val.medium { color: var(--yellow); }
+  .mag-val.high   { color: var(--red); }
+  .mag-label { font-size: .7rem; color: var(--muted); margin-top: 2px; }
+
+  input[type=range] {
+    flex: 1; -webkit-appearance: none; appearance: none;
+    height: 4px; border-radius: 2px; outline: none; cursor: pointer;
+    background: linear-gradient(90deg, var(--purple) var(--pct,50%), var(--border) var(--pct,50%));
+  }
+  input[type=range]::-webkit-slider-thumb {
+    -webkit-appearance: none; width: 18px; height: 18px;
+    border-radius: 50%; background: var(--purple);
+    box-shadow: 0 0 8px var(--purple); cursor: pointer;
+  }
+
+  .richter-desc {
+    font-size: .68rem; padding: 6px 10px;
+    border-radius: 6px; border: 1px solid var(--border);
+    background: rgba(0,0,0,.3); color: var(--muted);
+    margin-bottom: 14px; line-height: 1.5;
+  }
+
+  /* ── BUTTONS ── */
+  .btn {
+    display: inline-flex; align-items: center; gap: 8px;
+    padding: 11px 18px; border-radius: 8px; border: none;
+    font-family: var(--font-h); font-size: .8rem; font-weight: 700;
+    letter-spacing: 1.5px; cursor: pointer; transition: all .2s;
+  }
+  .btn:active { transform: scale(.96); }
+  .btn:disabled { opacity: .4; cursor: not-allowed; transform: none; }
+  .btn-primary { background: var(--purple); color: #000; }
+  .btn-primary:hover:not(:disabled) { background: #c9a0ff; }
+  .btn-red    { background: var(--red); color: #fff; }
+  .btn-red:hover:not(:disabled) { background: #ff6060; }
+  .btn-outline {
+    background: transparent; color: var(--muted);
+    border: 1px solid var(--border);
+  }
+  .btn-outline:hover:not(:disabled) { color: var(--text); border-color: var(--muted); }
+  .btn-row { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 8px; }
+
+  /* ── EPICENTER MAP (SVG O'zbekiston) ── */
+  .epicenter-select { margin-bottom: 14px; }
+  .region-grid {
+    display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px;
+    margin-top: 8px;
+  }
+  .region-btn {
+    padding: 7px 6px; background: rgba(179,136,255,.06);
+    border: 1px solid rgba(179,136,255,.15); border-radius: 7px;
+    color: var(--muted); font-family: var(--font-m); font-size: .65rem;
+    cursor: pointer; transition: all .2s; text-align: center;
+  }
+  .region-btn:hover { border-color: var(--purple); color: var(--purple); }
+  .region-btn.selected { border-color: var(--purple); color: var(--purple); background: rgba(179,136,255,.12); }
+
+  /* ── TARMOQ SIMULYATSIYA ── */
+  .device-list { display: flex; flex-direction: column; gap: 8px; margin-bottom: 14px; }
+  .device-row {
+    display: flex; align-items: center; gap: 10px;
+    padding: 8px 12px; background: rgba(0,0,0,.25);
+    border: 1px solid var(--border); border-radius: 8px;
+    font-size: .72rem;
+  }
+  .device-row.triggered { border-color: var(--red); background: rgba(255,61,61,.06); }
+  .device-dot {
+    width: 8px; height: 8px; border-radius: 50%;
+    background: var(--green); box-shadow: 0 0 5px var(--green);
+    flex-shrink: 0; transition: background .3s, box-shadow .3s;
+  }
+  .device-row.triggered .device-dot {
+    background: var(--red); box-shadow: 0 0 8px var(--red);
+    animation: dpulse .4s infinite;
+  }
+  @keyframes dpulse { 50% { opacity: .2; } }
+  .device-name { flex: 1; color: var(--text); }
+  .device-region { color: var(--muted); font-size: .65rem; }
+  .device-status { font-size: .65rem; color: var(--green); }
+  .device-row.triggered .device-status { color: var(--red); }
+  .device-eta { font-size: .65rem; color: var(--yellow); min-width: 50px; text-align: right; }
+
+  /* ── ETA JADVAL ── */
+  .eta-table { width: 100%; border-collapse: collapse; font-size: .7rem; }
+  .eta-table th {
+    text-align: left; padding: 6px 8px;
+    color: var(--muted); font-weight: 400; letter-spacing: 1px;
+    border-bottom: 1px solid var(--border); font-size: .62rem;
+  }
+  .eta-table td { padding: 7px 8px; border-bottom: 1px solid rgba(26,32,48,.6); }
+  .eta-table tr:last-child td { border-bottom: none; }
+  .eta-bar-cell { width: 100px; }
+  .eta-bar-wrap { height: 4px; background: var(--border); border-radius: 2px; overflow: hidden; }
+  .eta-bar { height: 100%; border-radius: 2px; transition: width 1s ease; }
+  .eta-warning { color: var(--yellow); font-weight: 600; }
+  .eta-danger  { color: var(--red); font-weight: 600; }
+  .eta-safe    { color: var(--green); }
+
+  /* ── LOG ── */
+  .log-list {
+    max-height: 140px; overflow-y: auto;
+    display: flex; flex-direction: column; gap: 3px;
+  }
+  .log-list::-webkit-scrollbar { width: 3px; }
+  .log-list::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
+  .log-entry { display: flex; gap: 8px; font-size: .68rem; animation: logIn .2s ease; }
+  @keyframes logIn { from { opacity:0; transform:translateY(-3px); } }
+  .log-time { color: var(--muted); flex-shrink: 0; }
+  .log-msg.ok     { color: var(--green); }
+  .log-msg.warn   { color: var(--red); }
+  .log-msg.detect { color: var(--yellow); }
+  .log-msg.info   { color: var(--text); }
+  .log-msg.server { color: var(--blue); }
+
+  /* ── STATUS BADGE ── */
+  .status-row {
+    display: flex; align-items: center; gap: 12px;
+    padding: 10px 14px; border-radius: 8px;
+    background: rgba(0,230,118,.05); border: 1px solid rgba(0,230,118,.15);
+    margin-bottom: 14px; font-size: .75rem;
+  }
+  .status-row.alert-state {
+    background: rgba(255,61,61,.08); border-color: rgba(255,61,61,.3);
+    animation: alertPulse 1s infinite;
+  }
+  @keyframes alertPulse { 50% { border-color: var(--red); } }
+  .status-icon { font-size: 1.4rem; }
+  .status-text { flex: 1; }
+  .status-mag {
+    font-family: var(--font-h); font-size: 1.6rem; font-weight: 800;
+    color: var(--red); opacity: 0; transition: opacity .3s;
+  }
+  .status-mag.show { opacity: 1; }
+
+  /* ── PROGRESS ── */
+  .progress-steps {
+    display: flex; gap: 0; margin: 12px 0;
+  }
+  .step {
+    flex: 1; text-align: center; padding: 8px 4px;
+    border-top: 2px solid var(--border); font-size: .62rem;
+    color: var(--muted); transition: all .4s; position: relative;
+  }
+  .step.active { border-top-color: var(--purple); color: var(--purple); }
+  .step.done   { border-top-color: var(--green);  color: var(--green); }
+  .step-icon   { font-size: 1rem; margin-bottom: 3px; display: block; }
+
+  /* ── SEISMO MINI ── */
+  #demoCanvas {
+    width: 100%; height: 60px; display: block;
+    border-radius: 6px; background: #060810;
+  }
+
+  footer {
+    margin-top: 32px; padding-top: 16px; border-top: 1px solid var(--border);
+    font-size: .62rem; color: var(--muted); letter-spacing: 1px;
+    display: flex; justify-content: space-between; flex-wrap: wrap; gap: 6px;
+  }
+</style>
+</head>
+<body>
+
+<!-- DEMO BADGE -->
+<div class="demo-badge">
+  <div class="demo-badge-left">⚗ DEMO SINOV PANELI — FAQAT TEST UCHUN</div>
+  <a href="index.html">← Asosiy ilovaga qaytish</a>
+</div>
+
+<div class="wrap">
+
+  <!-- HEADER -->
+  <div class="demo-header">
+    <div class="demo-title">SEISMO<span>NET</span> UZ <span style="font-size:.9rem;color:var(--purple);opacity:1">/ DEMO</span></div>
+    <div class="demo-sub">ZILZILA SIMULYATSIYA VA TARMOQ TESTI PANELI</div>
+  </div>
+
+  <!-- STATUS -->
+  <div id="statusRow" class="status-row">
+    <div class="status-icon" id="sIcon">🟢</div>
+    <div class="status-text">
+      <div id="sLabel" style="font-weight:700; letter-spacing:1px;">TINCH — DEMO TAYYOR</div>
+      <div id="sDetail" style="font-size:.65rem; color:var(--muted); margin-top:2px;">Quyidan zilzila parametrlarini tanlang</div>
+    </div>
+    <div class="status-mag" id="sMag"></div>
+  </div>
+
+  <!-- PROGRESS STEPS -->
+  <div class="progress-steps">
+    <div class="step" id="ps1"><span class="step-icon">📡</span>P-to'lqin</div>
+    <div class="step" id="ps2"><span class="step-icon">🖥️</span>Server</div>
+    <div class="step" id="ps3"><span class="step-icon">📊</span>Epicentr</div>
+    <div class="step" id="ps4"><span class="step-icon">🔔</span>Alert</div>
+    <div class="step" id="ps5"><span class="step-icon">✅</span>Tugadi</div>
+  </div>
+
+  <div class="demo-grid">
+
+    <!-- ── 1. MAGNITUDE ── -->
+    <div class="card">
+      <div class="card-label">1 — ZILZILA KUCHLIGI</div>
+      <div class="mag-row">
+        <div>
+          <div class="mag-val low" id="magVal">M 4.5</div>
+          <div class="mag-label" id="magLbl">O'rtacha</div>
+        </div>
+        <input type="range" id="magSlider" min="2.0" max="8.9" step="0.1" value="4.5"
+          oninput="updateMagSlider(this.value)">
+      </div>
+      <div class="richter-desc" id="richterDesc">
+        Seziladi, lekin zarar yetkazmaydi. Ba'zi narsalar tebranadi.
+      </div>
+      <div class="btn-row">
+        <button class="btn btn-outline" onclick="setMag(3.0)">M 3.0</button>
+        <button class="btn btn-outline" onclick="setMag(4.5)">M 4.5</button>
+        <button class="btn btn-outline" onclick="setMag(5.8)">M 5.8</button>
+        <button class="btn btn-outline" onclick="setMag(7.2)">M 7.2</button>
+      </div>
+    </div>
+
+    <!-- ── 2. EPICENTR ── -->
+    <div class="card">
+      <div class="card-label">2 — EPICENTR JOYLASHUVI</div>
+      <div class="region-grid" id="regionGrid"></div>
+    </div>
+
+    <!-- ── 3. TARMOQ SIMULYATSIYASI ── -->
+    <div class="card">
+      <div class="card-label">3 — TARMOQ QURILMALARI SIMULYATSIYASI</div>
+      <div class="device-list" id="deviceList"></div>
+      <div style="font-size:.65rem; color:var(--muted); margin-bottom:10px;">
+        ⚡ Qurilmalar P-to'lqinni aniqlash vaqti epicentrga masofaga qarab hisoblanadi
+      </div>
+      <div class="btn-row">
+        <button class="btn btn-primary" id="runBtn" onclick="runSimulation()">▶ SIMULYATSIYANI ISHGA TUSHIRISH</button>
+        <button class="btn btn-outline" id="resetBtn" onclick="resetAll()">↺ RESET</button>
+      </div>
+    </div>
+
+    <!-- ── 4. ETA JADVALI ── -->
+    <div class="card">
+      <div class="card-label">4 — VILOYATLARGA ETA JADVALI</div>
+      <table class="eta-table" id="etaTable">
+        <thead>
+          <tr>
+            <th>Viloyat</th>
+            <th>Masofa</th>
+            <th>P-to'lqin</th>
+            <th>Ogohlantirish</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody id="etaBody">
+          <tr><td colspan="5" style="color:var(--muted); text-align:center; padding:16px;">
+            Epicentni tanlang va simulyatsiyani boshlang
+          </td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <!-- ── 5. SEISMO CANVAS ── -->
+    <div class="card">
+      <div class="card-label">5 — SEYSMIK TO'LQIN VIZUALIZATSIYASI</div>
+      <canvas id="demoCanvas"></canvas>
+      <div style="display:flex; justify-content:space-between; margin-top:8px; font-size:.62rem; color:var(--muted);">
+        <span>P-to'lqin (tez, zaif)</span>
+        <span>S-to'lqin (sekin, kuchli)</span>
+      </div>
+    </div>
+
+    <!-- ── 6. LOG ── -->
+    <div class="card">
+      <div class="card-label">6 — SINOV JURNALI</div>
+      <div class="log-list" id="logList">
+        <div class="log-entry">
+          <span class="log-time">--:--:--</span>
+          <span class="log-msg info">Demo panel tayyor. Parametrlarni tanlang.</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- ── 7. BARCHA VILOYATLAR TRIGGER ── -->
+    <div class="card full">
+      <div class="card-label">7 — BARCHA VILOYATLAR REAL VAQT HOLATI</div>
+      <div id="allRegionsGrid" style="display:grid; grid-template-columns:repeat(auto-fill, minmax(160px,1fr)); gap:8px; margin-top:4px;"></div>
+    </div>
+
+  </div>
+
+  <footer>
+    <span>SeismoNet UZ — Demo Panel / <span style="color:var(--purple);">/?demo=true</span></span>
+    <span>Haqiqiy ogohlantirish tizimiga ta'sir qilmaydi</span>
+  </footer>
+</div>
+
+<script>
+// ============================================================
+//  MA'LUMOTLAR
+// ============================================================
+const UZ_REGIONS = {
+  "Toshkent"         : { lat: 41.2995, lng: 69.2401 },
+  "Samarqand"        : { lat: 39.6270, lng: 66.9750 },
+  "Namangan"         : { lat: 41.0011, lng: 71.6683 },
+  "Andijon"          : { lat: 40.7821, lng: 72.3442 },
+  "Farg'ona"         : { lat: 40.3864, lng: 71.7864 },
+  "Qashqadaryo"      : { lat: 38.8610, lng: 65.7919 },
+  "Surxondaryo"      : { lat: 37.9401, lng: 67.5699 },
+  "Navoiy"           : { lat: 40.0840, lng: 65.3792 },
+  "Jizzax"           : { lat: 40.1158, lng: 67.8422 },
+  "Sirdaryo"         : { lat: 40.8393, lng: 68.6614 },
+  "Xorazm"           : { lat: 41.5533, lng: 60.6236 },
+  "Buxoro"           : { lat: 39.7680, lng: 64.4219 },
+  "Qoraqalpog'iston" : { lat: 43.8041, lng: 59.6021 },
+};
+
+// Simulyatsiya qurilmalari (tarmoq effekti)
+const SIM_DEVICES = [
+  { id: "UZ-T-001", name: "Qurilma #1", region: "Toshkent" },
+  { id: "UZ-S-002", name: "Qurilma #2", region: "Samarqand" },
+  { id: "UZ-N-003", name: "Qurilma #3", region: "Namangan" },
+  { id: "UZ-A-004", name: "Qurilma #4", region: "Andijon" },
+  { id: "UZ-Q-005", name: "Qurilma #5", region: "Qashqadaryo" },
+];
+
+const RICHTER_DESC = {
+  2: { label: "Juda kuchsiz",  desc: "Asboblar sezadi, odam sezmaydi.",                   color: "var(--green)" },
+  3: { label: "Kuchsiz",       desc: "Ba'zi odamlar sezadi, tebranish his qilinadi.",       color: "var(--green)" },
+  4: { label: "O'rtacha",      desc: "Ko'pchilik sezadi, derazalar tebranadi.",             color: "var(--yellow)" },
+  5: { label: "Kuchli",        desc: "Deyarli hamma sezadi, engil zarar mumkin.",           color: "var(--yellow)" },
+  6: { label: "Juda kuchli",   desc: "Zarar yetkazadi, binolar shikastlanishi mumkin.",     color: "var(--red)" },
+  7: { label: "Halokatli",     desc: "Katta zarar, ko'plab binolar buziladi.",              color: "var(--red)" },
+  8: { label: "Ulkan",         desc: "Keng hudud vayronaga aylanadi, ko'plab qurbonlar.",   color: "var(--red)" },
+};
+
+// ============================================================
+//  HOLAT
+// ============================================================
+let selectedMag    = 4.5;
+let selectedRegion = "Samarqand";
+let simRunning     = false;
+let simTimers      = [];
+let waveData       = [];
+let simPhase       = 'idle'; // idle | p_wave | s_wave | done
+let simStartTime   = 0;
+let simMagVal      = 0;
+const logMessages  = [];
+
+// ============================================================
+//  ISHGA TUSHIRISH
+// ============================================================
+window.addEventListener('DOMContentLoaded', () => {
+  // URL da ?demo=true bo'lishi kerak
+  const params = new URLSearchParams(window.location.search);
+  if (!params.has('demo')) {
+    document.body.innerHTML = `
+      <div style="display:flex;align-items:center;justify-content:center;min-height:100vh;flex-direction:column;gap:16px;font-family:monospace;color:#5a6278;">
+        <div style="font-size:2rem">🔒</div>
+        <div style="font-size:.9rem;letter-spacing:2px;">DEMO REJIMI YOQILMAGAN</div>
+        <div style="font-size:.72rem;">URL ga <code style="color:#b388ff;">?demo=true</code> qo'shing</div>
+        <a href="?demo=true" style="color:#b388ff;font-size:.75rem;margin-top:8px;">Demo panelni ochish →</a>
+      </div>`;
+    return;
+  }
+
+  buildRegionGrid();
+  buildDeviceList();
+  buildAllRegionsGrid();
+  updateMagSlider(selectedMag);
+  resizeCanvas();
+  drawWave();
+  addLog('Demo panel ishga tushdi', 'ok');
+  addLog(`URL: ${window.location.href}`, 'info');
+
+  window.addEventListener('resize', resizeCanvas);
+});
+
+// ============================================================
+//  MAGNITUDE SLIDER
+// ============================================================
+function updateMagSlider(val) {
+  selectedMag = parseFloat(val);
+  document.getElementById('magSlider').value = val;
+
+  const pct = ((val - 2) / (8.9 - 2)) * 100;
+  document.getElementById('magSlider').style.setProperty('--pct', pct + '%');
+
+  const level = Math.floor(Math.min(selectedMag, 8));
+  const info  = RICHTER_DESC[Math.max(2, level)] || RICHTER_DESC[8];
+
+  const el = document.getElementById('magVal');
+  el.textContent = `M ${parseFloat(val).toFixed(1)}`;
+  el.style.color = info.color;
+  el.className = 'mag-val';
+
+  document.getElementById('magLbl').textContent = info.label;
+  document.getElementById('richterDesc').textContent = info.desc;
+
+  updateEtaTable();
+}
+
+function setMag(val) {
+  updateMagSlider(val);
+}
+
+// ============================================================
+//  VILOYATLAR GRID
+// ============================================================
+function buildRegionGrid() {
+  const grid = document.getElementById('regionGrid');
+  Object.keys(UZ_REGIONS).forEach(r => {
+    const btn = document.createElement('button');
+    btn.className = 'region-btn' + (r === selectedRegion ? ' selected' : '');
+    btn.textContent = r;
+    btn.onclick = () => selectRegion(r);
+    btn.id = 'rb_' + r;
+    grid.appendChild(btn);
+  });
+}
+
+function selectRegion(r) {
+  selectedRegion = r;
+  document.querySelectorAll('.region-btn').forEach(b => b.classList.remove('selected'));
+  document.getElementById('rb_' + r).classList.add('selected');
+  updateEtaTable();
+  addLog(`Epicentr: ${r} tanlandi`, 'info');
+}
+
+// ============================================================
+//  ETA JADVALI
+// ============================================================
+function haversine(lat1, lng1, lat2, lng2) {
+  const R = 6371, r = Math.PI / 180;
+  const dl = (lat2 - lat1) * r, dg = (lng2 - lng1) * r;
+  const a = Math.sin(dl/2)**2 + Math.cos(lat1*r)*Math.cos(lat2*r)*Math.sin(dg/2)**2;
+  return R * 2 * Math.asin(Math.sqrt(a));
+}
+
+function calcEta(epicenter, target) {
+  const dist  = haversine(epicenter.lat, epicenter.lng, target.lat, target.lng);
+  const pTime = dist / 6.5;
+  const sTime = dist / 3.5;
+  return { dist: Math.round(dist), pArrival: Math.round(pTime), warning: Math.round(sTime - pTime) };
+}
+
+function updateEtaTable() {
+  const epic  = UZ_REGIONS[selectedRegion];
+  if (!epic) return;
+  const tbody = document.getElementById('etaBody');
+  const rows  = Object.entries(UZ_REGIONS)
+    .filter(([r]) => r !== selectedRegion)
+    .map(([r, coords]) => ({ region: r, ...calcEta(epic, coords) }))
+    .sort((a, b) => a.dist - b.dist);
+
+  const maxDist = Math.max(...rows.map(r => r.dist));
+
+  tbody.innerHTML = rows.map(row => {
+    const pct = (row.dist / maxDist) * 100;
+    const warnClass = row.warning < 10 ? 'eta-danger' : row.warning < 30 ? 'eta-warning' : 'eta-safe';
+    const barColor  = row.warning < 10 ? 'var(--red)' : row.warning < 30 ? 'var(--yellow)' : 'var(--green)';
+    return `
+      <tr id="etr_${row.region}">
+        <td>${row.region}</td>
+        <td style="color:var(--muted)">${row.dist} km</td>
+        <td style="color:var(--blue)">${row.pArrival}s</td>
+        <td class="${warnClass}">${row.warning}s</td>
+        <td class="eta-bar-cell">
+          <div class="eta-bar-wrap">
+            <div class="eta-bar" style="width:${pct}%; background:${barColor};"></div>
+          </div>
+        </td>
+      </tr>`;
+  }).join('');
+}
+
+// ============================================================
+//  TARMOQ QURILMALARI
+// ============================================================
+function buildDeviceList() {
+  const list = document.getElementById('deviceList');
+  SIM_DEVICES.forEach(d => {
+    const row = document.createElement('div');
+    row.className = 'device-row';
+    row.id = 'dev_' + d.id;
+    row.innerHTML = `
+      <div class="device-dot" id="ddot_${d.id}"></div>
+      <div class="device-name">${d.name}</div>
+      <div class="device-region">${d.region}</div>
+      <div class="device-status" id="dstatus_${d.id}">Kutmoqda</div>
+      <div class="device-eta" id="deta_${d.id}"></div>`;
+    list.appendChild(row);
+  });
+}
+
+// ============================================================
+//  BARCHA VILOYATLAR GRID
+// ============================================================
+function buildAllRegionsGrid() {
+  const grid = document.getElementById('allRegionsGrid');
+  Object.keys(UZ_REGIONS).forEach(r => {
+    const chip = document.createElement('div');
+    chip.id = 'arc_' + r;
+    chip.style.cssText = `
+      padding:10px 12px; border-radius:8px;
+      border:1px solid var(--border); background:#0a0f1a;
+      display:flex; align-items:center; gap:8px;
+      font-size:.7rem; transition: all .3s;`;
+    chip.innerHTML = `
+      <div id="ardot_${r}" style="width:7px;height:7px;border-radius:50%;background:var(--green);box-shadow:0 0 5px var(--green);flex-shrink:0;transition:all .3s;"></div>
+      <span style="flex:1">${r}</span>
+      <span id="areta_${r}" style="font-size:.62rem;color:var(--muted);">—</span>`;
+    grid.appendChild(chip);
+  });
+}
+
+// ============================================================
+//  SIMULYATSIYA ASOSIY LOGIKASI
+// ============================================================
+function runSimulation() {
+  if (simRunning) return;
+  simRunning  = true;
+  simMagVal   = selectedMag;
+  simPhase    = 'p_wave';
+  simStartTime = Date.now();
+
+  document.getElementById('runBtn').disabled  = true;
+  document.getElementById('resetBtn').disabled = true;
+
+  const epic = UZ_REGIONS[selectedRegion];
+  addLog(`━━━ SIMULYATSIYA BOSHLANDI ━━━`, 'detect');
+  addLog(`Epicentr: ${selectedRegion} | M${simMagVal.toFixed(1)}`, 'detect');
+
+  // Steps animatsiya
+  setStep(1, 'active');
+
+  // P-to'lqin: har qurilmaga masofaga qarab kelib yetadi
+  SIM_DEVICES.forEach((dev, i) => {
+    const devCoords = UZ_REGIONS[dev.region] || epic;
+    const eta = calcEta(epic, devCoords);
+    const pDelay = eta.pArrival * 80; // ms (tezlashtirilgan: 80ms = 1 soniya)
+
+    document.getElementById('deta_' + dev.id).textContent = `${eta.pArrival}s`;
+
+    simTimers.push(setTimeout(() => {
+      triggerDevice(dev, eta);
+      addLog(`${dev.name} (${dev.region}) P-to'lqin aniqladi — ${eta.dist} km`, 'detect');
+
+      // 3-qurilma triggerdan keyin server tasdiqlaydi
+      const triggered = SIM_DEVICES.filter((_, j) => j <= i);
+      if (triggered.length >= 3) {
+        setStep(1, 'done'); setStep(2, 'active');
+        simTimers.push(setTimeout(() => serverConfirm(epic, simMagVal), 400));
+      }
+    }, pDelay));
+  });
+}
+
+function triggerDevice(dev, eta) {
+  const row = document.getElementById('dev_' + dev.id);
+  if (row) {
+    row.classList.add('triggered');
+    document.getElementById('dstatus_' + dev.id).textContent = 'TRIGGERED ✓';
+    document.getElementById('deta_' + dev.id).textContent = '';
+  }
+}
+
+function serverConfirm(epic, mag) {
+  addLog(`Server: 3+ qurilma tasdiqladi → epicentr hisoblanmoqda...`, 'server');
+  setStep(2, 'done'); setStep(3, 'active');
+
+  simTimers.push(setTimeout(() => {
+    addLog(`Epicentr: ${selectedRegion} (${epic.lat.toFixed(3)}°N, ${epic.lng.toFixed(3)}°E)`, 'server');
+    setStep(3, 'done'); setStep(4, 'active');
+    broadcastAlert(epic, mag);
+  }, 600));
+}
+
+function broadcastAlert(epic, mag) {
+  addLog(`━━━ BARCHA VILOYATLARGA ALERT YUBORILDI ━━━`, 'warn');
+  setStatus('alert', mag);
+  setStep(4, 'done'); setStep(5, 'active');
+
+  // Barcha viloyatlarga ETA bilan alert
+  Object.entries(UZ_REGIONS).forEach(([r, coords], i) => {
+    const eta = calcEta(epic, coords);
+    const delay = i * 60;
+
+    simTimers.push(setTimeout(() => {
+      triggerRegion(r, eta);
+      addLog(`${r}: ${eta.warning}s ogohlantirish oynasi`, eta.warning < 15 ? 'warn' : 'detect');
+    }, delay));
+  });
+
+  // ETA jadvali jadalni yangilash
+  updateEtaTableAlert(epic);
+
+  // To'lqin animatsiyasi
+  simPhase = 'p_wave'; simStartTime = Date.now();
+
+  // Simulyatsiya tugashi
+  simTimers.push(setTimeout(() => {
+    setStep(5, 'done');
+    addLog('━━━ SIMULYATSIYA TUGADI ━━━', 'ok');
+    simPhase = 'done';
+    document.getElementById('resetBtn').disabled = false;
+  }, 5000));
+}
+
+function triggerRegion(region, eta) {
+  const chip = document.getElementById('arc_' + region);
+  const dot  = document.getElementById('ardot_' + region);
+  const etaEl = document.getElementById('areta_' + region);
+  if (!chip) return;
+  chip.style.borderColor = 'var(--red)';
+  chip.style.background  = 'rgba(255,61,61,.08)';
+  if (dot) { dot.style.background = 'var(--red)'; dot.style.boxShadow = '0 0 8px var(--red)'; }
+  if (etaEl) {
+    etaEl.textContent = `${eta.warning}s`;
+    etaEl.style.color = eta.warning < 15 ? 'var(--red)' : eta.warning < 30 ? 'var(--yellow)' : 'var(--green)';
+  }
+}
+
+function updateEtaTableAlert(epic) {
+  const rows = document.querySelectorAll('#etaBody tr');
+  rows.forEach(row => {
+    const regionName = row.cells[0]?.textContent;
+    if (!regionName || !UZ_REGIONS[regionName]) return;
+    const eta = calcEta(epic, UZ_REGIONS[regionName]);
+    if (row.cells[3]) {
+      row.cells[3].style.animation = 'pulse .5s 3';
+    }
+  });
+}
+
+// ============================================================
+//  RESET
+// ============================================================
+function resetAll() {
+  simTimers.forEach(t => clearTimeout(t));
+  simTimers = [];
+  simRunning = false;
+  simPhase   = 'idle';
+
+  setStatus('ok');
+  ['ps1','ps2','ps3','ps4','ps5'].forEach(id => {
+    document.getElementById(id).className = 'step';
+  });
+
+  SIM_DEVICES.forEach(dev => {
+    const row = document.getElementById('dev_' + dev.id);
+    if (row) row.classList.remove('triggered');
+    const s = document.getElementById('dstatus_' + dev.id);
+    if (s) s.textContent = 'Kutmoqda';
+    const e = document.getElementById('deta_' + dev.id);
+    if (e) e.textContent = '';
+  });
+
+  Object.keys(UZ_REGIONS).forEach(r => {
+    const chip = document.getElementById('arc_' + r);
+    const dot  = document.getElementById('ardot_' + r);
+    const eta  = document.getElementById('areta_' + r);
+    if (chip) { chip.style.borderColor = ''; chip.style.background = ''; }
+    if (dot)  { dot.style.background = 'var(--green)'; dot.style.boxShadow = '0 0 5px var(--green)'; }
+    if (eta)  { eta.textContent = '—'; eta.style.color = ''; }
+  });
+
+  document.getElementById('runBtn').disabled  = false;
+  document.getElementById('resetBtn').disabled = true;
+  updateEtaTable();
+  addLog('Simulyatsiya reset qilindi', 'info');
+}
+
+// ============================================================
+//  UI YORDAMCHILARI
+// ============================================================
+function setStatus(state, mag) {
+  const row = document.getElementById('statusRow');
+  const icon = document.getElementById('sIcon');
+  const label = document.getElementById('sLabel');
+  const detail = document.getElementById('sDetail');
+  const magEl = document.getElementById('sMag');
+
+  if (state === 'alert') {
+    row.className = 'status-row alert-state';
+    icon.textContent = '🔴';
+    label.textContent = '⚠ ZILZILA ANIQLANDI!';
+    detail.textContent = `M${mag.toFixed(1)} — Epicentr: ${selectedRegion}`;
+    magEl.textContent = `M${mag.toFixed(1)}`;
+    magEl.className = 'status-mag show';
+  } else {
+    row.className = 'status-row';
+    icon.textContent = '🟢';
+    label.textContent = 'TINCH — DEMO TAYYOR';
+    detail.textContent = 'Quyidan zilzila parametrlarini tanlang';
+    magEl.className = 'status-mag';
+  }
+}
+
+function setStep(n, state) {
+  const el = document.getElementById('ps' + n);
+  if (el) el.className = 'step ' + state;
+}
+
+function addLog(msg, level = 'info') {
+  const time = new Date().toTimeString().slice(0, 8);
+  logMessages.unshift({ time, msg, level });
+  if (logMessages.length > 60) logMessages.pop();
+  const list = document.getElementById('logList');
+  list.innerHTML = '';
+  logMessages.forEach(e => {
+    const row = document.createElement('div');
+    row.className = 'log-entry';
+    row.innerHTML = `<span class="log-time">${e.time}</span><span class="log-msg ${e.level}">${e.msg}</span>`;
+    list.appendChild(row);
+  });
+}
+
+// ============================================================
+//  CANVAS — TO'LQIN ANIMATSIYASI
+// ============================================================
+function resizeCanvas() {
+  const c = document.getElementById('demoCanvas');
+  c.width  = c.offsetWidth * devicePixelRatio;
+  c.height = c.offsetHeight * devicePixelRatio;
+}
+
+function drawWave() {
+  const c   = document.getElementById('demoCanvas');
+  const ctx = c.getContext('2d');
+  const W   = c.width, H = c.height;
+  const t   = (Date.now() - simStartTime) / 1000;
+
+  ctx.fillStyle = '#060810';
+  ctx.fillRect(0, 0, W, H);
+
+  // Markaziy chiziq
+  ctx.strokeStyle = 'rgba(26,32,48,.8)';
+  ctx.lineWidth = 1;
+  ctx.setLineDash([4, 6]);
+  ctx.beginPath(); ctx.moveTo(0, H/2); ctx.lineTo(W, H/2); ctx.stroke();
+  ctx.setLineDash([]);
+
+  let color = '#b388ff';
+  let amplitude = 0;
+
+  if (simPhase === 'p_wave') {
+    amplitude = simMagVal * 0.04 * Math.exp(-t * 0.8);
+    color = '#b388ff';
+  } else if (simPhase === 's_wave') {
+    amplitude = simMagVal * 0.14 * Math.exp(-t * 0.25);
+    color = '#ff3d3d';
+  }
+
+  if (amplitude > 0.001) {
+    ctx.strokeStyle = color;
+    ctx.lineWidth   = 1.5 * devicePixelRatio;
+    ctx.shadowColor = color;
+    ctx.shadowBlur  = 6;
+    ctx.beginPath();
+    for (let x = 0; x < W; x++) {
+      const freq = simPhase === 'p_wave' ? 8 : 3;
+      const phase = (x / W) * Math.PI * freq * 2 - t * freq * 2;
+      const y = H / 2 - Math.sin(phase) * amplitude * H * 0.4;
+      x === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
+    }
+    ctx.stroke();
+    ctx.shadowBlur = 0;
+  } else {
+    // Fon shovqini
+    ctx.strokeStyle = '#1a3020';
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    for (let x = 0; x < W; x++) {
+      const y = H/2 + (Math.random() - 0.5) * 4;
+      x === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
+    }
+    ctx.stroke();
+  }
+
+  requestAnimationFrame(drawWave);
+}
+</script>
+</body>
+</html>
